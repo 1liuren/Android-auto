@@ -1,0 +1,4 @@
+uiautomator2>=3.0.0
+Pillow>=9.0.0
+dashscope>=1.8.0
+lxml>=4.6.0 
