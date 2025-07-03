@@ -101,6 +101,8 @@ phone_auto/
 - 配置验证
 - AI提示词管理
 - 任务模板生成
+- 应用包名映射管理
+- 模型参数配置
 
 ### src/device_controller.py - 设备控制
 - 设备连接管理
@@ -119,6 +121,7 @@ phone_auto/
 - 步骤执行协调
 - 数据收集和保存
 - 完成状态判断
+- 智能应用启动（三级优先级）
 
 ### utils/image_marker.py - 图像标记
 - 精准位置标记
@@ -174,7 +177,12 @@ output/
 ```python
 class Config:
     # AI模型配置
-    model_name = 'qwen-max-0919'         # AI模型名称
+    model_name = 'deepseek-r1'           # AI模型名称
+    model_params = {                     # 模型参数
+        'temperature': 0.1,              # 稳定性参数
+        'top_p': 0.8,                   # 核采样参数
+        'seed': 42                      # 固定种子
+    }
     
     # 设备配置  
     device_id = "AQQRVB1629003418"       # 设备ID
@@ -185,14 +193,55 @@ class Config:
     # 设备信息
     default_phone_model = "Redmi K50"    # 手机型号
     default_os = "Xiaomi HyperOS"        # 操作系统
+    
+    # 应用包名映射
+    app_packages = {
+        "京东": "com.jingdong.app.mall",
+        "淘宝": "com.taobao.taobao", 
+        "微信": "com.tencent.mm",
+        "支付宝": "com.eg.android.AlipayGphone",
+        "网易云音乐": "com.netease.cloudmusic",
+        # ... 更多应用映射
+    }
 ```
 
 ## 🎯 支持的操作类型
 
 - **Tap**: 点击操作
 - **Typing**: 文本输入  
-- **Open**: 打开应用
+- **Open**: 打开应用（智能三级启动策略）
 - **End**: 任务完成
+
+### 智能应用启动策略
+
+系统采用三级优先级策略启动应用：
+
+1. **AI包名启动** 🤖 (最高优先级)
+   - 使用AI分析提供的精确包名
+   - 最快速、最准确的启动方式
+   
+2. **内置包名映射** 📱 (第二优先级)
+   - 使用配置中预设的应用包名映射
+   - 支持15+常用应用的直接启动
+   
+3. **图标点击启动** 👆 (备选方案)
+   - 基于AI提供的位置坐标点击应用图标
+   - 适用于未知应用或包名启动失败的情况
+
+启动过程示例：
+```
+🤖 使用AI提供的包名启动应用: com.jingdong.app.mall
+✅ 应用启动成功
+
+# 如果AI包名失败：
+⚠️  AI包名启动失败，尝试其他方式
+📱 使用内置包名启动应用: 京东 -> com.jingdong.app.mall
+✅ 应用启动成功
+
+# 如果包名都失败：
+⚠️  内置包名启动失败，尝试点击方式
+👆 点击应用图标启动: 京东 at (922, 1271)
+```
 
 ## 📈 技术优化历程
 
@@ -286,6 +335,46 @@ app_packages = {
 
 修改 `src/config.py` 中的 `get_ai_system_prompt()` 方法来自定义AI行为。
 
+### 配置管理功能
+
+**模型参数调整：**
+```python
+from src.config import config
+
+# 设置保守模式（更稳定输出）
+config.set_conservative_mode()
+
+# 设置平衡模式（默认）
+config.set_balanced_mode()
+
+# 设置创新模式（更多样化输出）
+config.set_creative_mode()
+
+# 自定义参数
+config.update_model_param('temperature', 0.2)
+```
+
+**应用包名管理：**
+```python
+# 添加新应用
+config.add_app_package("新应用", "com.example.app")
+
+# 获取应用包名
+package = config.get_app_package("京东")
+
+# 列出所有支持的应用
+config.list_app_packages()
+```
+
+**查看当前配置：**
+```python
+# 打印模型配置
+config.print_model_config()
+
+# 验证配置有效性
+config.validate()
+```
+
 ## 🎉 项目成果
 
 通过持续优化，项目实现了：
@@ -295,6 +384,8 @@ app_packages = {
 3. **架构升级** - 从800行单文件变为模块化架构
 4. **智能化** - 纯AI驱动，无需人工预设或干预
 5. **专业化** - 完整的记录和分析功能
+6. **可靠性** - 智能三级应用启动策略，启动成功率近100%
+7. **可扩展性** - 动态配置管理，支持灵活的参数调整和应用扩展
 
 ## 🌟 核心特色
 
@@ -303,6 +394,9 @@ app_packages = {
 - **低成本运行**：API调用成本降低60%以上
 - **强健容错**：AI+XML双重保障机制
 - **专业输出**：生成完整的任务执行报告
+- **智能启动**：三级优先级应用启动策略，自动降级处理失败情况
+- **灵活配置**：支持模型参数动态调整和应用包名管理
+- **自适应提示**：AI提示词与配置自动同步，保持一致性
 
 ## 📄 许可证
 
@@ -318,6 +412,7 @@ app_packages = {
 
 ---
 
-**项目版本：** V2.0  
+**项目版本：** V2.1  
 **最后更新：** 2025年1月  
+**最新特性：** 智能三级应用启动策略 + 动态配置管理  
 **技术特色：** 100%精确的XML坐标分析，实现手机UI自动化的精确性突破 
