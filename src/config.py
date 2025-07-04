@@ -17,7 +17,7 @@ class Config:
         # API配置
         self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
         
-        # 模型配置
+        # 模型配置  qwen-max、deepseek-r1、qwen-plus
         self.model_name = "deepseek-r1"  # 默认模型
         
         # 模型参数配置

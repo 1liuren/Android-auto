@@ -64,6 +64,17 @@ python main.py
 - `进入微信发朋友圈`
 - `打开网易云音乐播放成都`
 
+## 下载qwen-vl 2.5 3B
+```bash
+python -c "
+from huggingface_hub import snapshot_download
+snapshot_download(
+    repo_id='echo840/MonkeyOCR',
+    allow_patterns='Recognition/**',
+    local_dir='./MonkeyOCR'
+)
+```
+
 ## 📁 项目结构
 
 ```

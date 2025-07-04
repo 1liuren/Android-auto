@@ -103,7 +103,7 @@ class TaskExecutor:
                     xml_path, 
                     self.task_data['query'], 
                     step,
-                    screenshot_path=None,
+                    screenshot_path=screenshot_path,
                     history_steps = self.history_steps
                 )
             except Exception as e:
@@ -150,7 +150,7 @@ class TaskExecutor:
         """捕获屏幕状态，返回截图路径和XML路径"""
         
         # 截图
-        screenshot_name = f"1-{step}.png"
+        screenshot_name = f"1-{step}.jpg"
         screenshot_path = os.path.join(self.output_dir, screenshot_name)
         self.device.screenshot(screenshot_path)
         

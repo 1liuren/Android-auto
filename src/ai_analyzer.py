@@ -60,7 +60,7 @@ class AIAnalyzer:
                     **config.model_params
                 )
                 
-                if config.model_name == 'qwen-max':
+                if config.model_name in ['qwen-max', 'qwen-plus']:
                     result = response.output.text
                 else:
                     result = response.output.choices[0].message.content
@@ -225,7 +225,7 @@ class AIAnalyzer:
     def _enhance_with_qwenvl_html(self, xml_content: str, screenshot_path: str) -> str:
         """使用QwenVL HTML提取文本信息并增强XML"""
         try:
-            logger.info("🖼️ 开始使用QwenVL HTML提取截图文本...")
+            logger.info("🖼️ 开始使用QwenVL 提取截图文本...")
             
             # 1. 使用QwenVL HTML提取截图中的文本信息
             html_content = self._extract_text_with_qwenvl_html(screenshot_path)
@@ -236,7 +236,7 @@ class AIAnalyzer:
             
             # 2. 将提取的HTML文本信息作为注释添加到XML开头
             enhanced_xml = f"""<!-- 
-=== QwenVL HTML 提取的界面文本信息 ===
+=== QwenVL 提取的界面文本信息，其中信息可能在xml中不是以明文出现，这个结果可以以便理解界面，从而更好的执行任务 ===
 {html_content}
 -->
 
@@ -258,13 +258,13 @@ class AIAnalyzer:
             messages = [
                 {
                     "role": "system",
-                    "content": "You are an AI specialized in recognizing and extracting text from images. Your mission is to analyze the image document and generate the result in QwenVL Document Parser HTML format using specified tags while maintaining user privacy and data integrity."
+                    "content": "You are an AI specialized in recognizing and extracting text from images."
                 },
                 {
                     "role": "user",
                     "content": [
                         {"image": image_path},
-                        {"text": "QwenVL HTML"}
+                        {"text": "提取其中文字"}
                     ]
                 }
             ]
@@ -290,7 +290,7 @@ class AIAnalyzer:
             else:
                 html_content = result
             
-            logger.info(f"🤖 QwenVL HTML提取完成，响应长度: {len(html_content)} 字符")
+            # logger.info(f"🤖 QwenVL HTML提取完成，响应: {html_content}")
             return html_content
             
         except Exception as e:
