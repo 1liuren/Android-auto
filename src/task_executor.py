@@ -10,6 +10,7 @@ import os
 import json
 import time
 import uuid
+import re
 from .config import config
 from .device_controller import DeviceController
 from .ai_analyzer import AIAnalyzer
@@ -58,12 +59,22 @@ class TaskExecutor:
         # 重置历史步骤
         self.history_steps = []
         
+        pattern = r'[（(].*?[）)]'
+        if re.search(pattern, query):
+            # 去除括号内容
+            clean_query = re.sub(pattern, '', query)
+            logger.info(f"🔄 原始查询: {query}")
+            logger.info(f"🔄 处理后查询: {clean_query}")
+        else:
+            clean_query = query
+        
         episode_id = str(uuid.uuid4())[:8]
+        self.query = query
         self.task_data = {
             "phone": "Unknown Device",
             "os": "Unknown OS", 
             "screen_resolution": config.default_screen_resolution,
-            "query": query,
+            "query": clean_query,
             "episode_id": episode_id,
             "data": []
         }
@@ -81,7 +92,7 @@ class TaskExecutor:
             logger.info(f"📲 SDK: {device_info.get('sdk', 'Unknown')}")
         
         # 创建输出目录
-        self.output_dir = f"output/{query}"
+        self.output_dir = f"output/{clean_query}"
         os.makedirs(self.output_dir, exist_ok=True)
         
         logger.info(f"🆔 任务ID: {self.task_data['episode_id']}")
@@ -91,7 +102,7 @@ class TaskExecutor:
         """执行任务步骤"""
         step = 1
         
-        while step <= 10:  # 最大步骤数
+        while step <= config.max_execution_times:  # 最大步骤数
             logger.info(f"\n=== 步骤 {step} ===")
             
             # 1. 截图和获取XML
@@ -101,7 +112,7 @@ class TaskExecutor:
             try:
                 ai_result = self.ai_analyzer.analyze_screen(
                     xml_path, 
-                    self.task_data['query'], 
+                    self.query, 
                     step,
                     screenshot_path=screenshot_path,
                     history_steps = self.history_steps
@@ -307,8 +318,8 @@ class TaskExecutor:
             # Open操作需要app和package字段
             if "app" in plan and plan["app"]:
                 cleaned_plan["app"] = plan["app"]
-            if "package" in plan and plan["package"]:
-                cleaned_plan["package"] = plan["package"]
+            # if "package" in plan and plan["package"]:
+            #     cleaned_plan["package"] = plan["package"]
         
         elif action_type == "tap":
             # Tap操作需要box、times、position字段
