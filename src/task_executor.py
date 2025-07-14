@@ -11,9 +11,11 @@ import json
 import time
 import uuid
 import re
+from typing import Optional, List
 from .config import config
 from .device_controller import DeviceController
 from .ai_analyzer import AIAnalyzer
+from .privacy_protector import PrivacyProtector
 from utils.image_marker import ImageMarker
 from .logger_config import get_logger
 from datetime import datetime
@@ -23,16 +25,33 @@ logger = get_logger(__name__)
 class TaskExecutor:
     """任务执行器"""
     
-    def __init__(self):
+    def __init__(self, output_base_dir="output"):
         self.device = DeviceController()
         self.ai_analyzer = AIAnalyzer()
+        self.privacy_protector = PrivacyProtector()
         self.task_data = None
         self.output_dir = None
+        self.output_base_dir = output_base_dir  # 自定义输出基础目录
         self.history_steps = []  # 添加历史步骤记录
+        self.privacy_enabled = False  # 隐私保护开关
+        self.is_interrupted = False  # 中断标志
+    
+    def interrupt_task(self):
+        """中断当前任务"""
+        self.is_interrupted = True
+        logger.info("🛑 收到任务中断请求")
     
     def run_task(self, query: str) -> bool:
         """运行任务"""
         logger.info(f"\n🚀 开始执行任务: {query}")
+        
+        # 重置中断标志
+        self.is_interrupted = False
+        
+        # 检查中断
+        if self.is_interrupted:
+            logger.info("🛑 任务在开始前被中断")
+            return False
         
         # 测试设备连接
         if not self.device.test_connection():
@@ -45,8 +64,15 @@ class TaskExecutor:
         # 执行任务步骤
         success = self._execute_task_steps()
         
+        # 检查是否被中断
+        if self.is_interrupted:
+            logger.info("🛑 任务被用户中断")
+            self.save_interrupted_task()
+            success = False
+        
         # 保存任务结果
-        self._save_task_result()
+        if not self.is_interrupted:
+            self._save_task_result()
         
         # 无论任务是否成功完成，都清理应用
         logger.info(f"\n🧹 任务结束，正在清理应用...")
@@ -92,8 +118,16 @@ class TaskExecutor:
             logger.info(f"📲 SDK: {device_info.get('sdk', 'Unknown')}")
         
         # 创建输出目录
-        self.output_dir = f"output/{clean_query}"
+        self.output_dir = f"{self.output_base_dir}/{clean_query}"
         os.makedirs(self.output_dir, exist_ok=True)
+        
+        # 判断是否需要启用隐私保护
+        if config.privacy_protection.get("enabled", True):
+            self.privacy_enabled = True
+            logger.info(f"🔒 隐私保护模式已启用")
+        else:
+            self.privacy_enabled = False
+            logger.info(f"📄 隐私保护功能已关闭")
         
         logger.info(f"🆔 任务ID: {self.task_data['episode_id']}")
         logger.info(f"📁 输出目录: {self.output_dir}")
@@ -103,12 +137,22 @@ class TaskExecutor:
         step = 1
         
         while step <= config.max_execution_times:  # 最大步骤数
+            # 检查中断请求
+            if self.is_interrupted:
+                logger.info(f"🛑 步骤 {step} 开始前检测到中断请求，停止执行")
+                return False
+                
             logger.info(f"\n=== 步骤 {step} ===")
             
             # 1. 截图和获取XML
             screenshot_path, xml_path = self._wait_for_page_load(step)
             
-            # 2. AI分析（使用多模态增强）
+            # 检查中断请求
+            if self.is_interrupted:
+                logger.info(f"🛑 步骤 {step} 页面加载后检测到中断请求，停止执行")
+                return False
+            
+            # 2. AI分析（包含隐私检测）
             try:
                 ai_result = self.ai_analyzer.analyze_screen(
                     xml_path, 
@@ -121,36 +165,58 @@ class TaskExecutor:
                 logger.error(f"❌ AI分析失败: {str(e)}")
                 return False
             
-            # 3. 显示分析结果
+            # 检查中断请求
+            if self.is_interrupted:
+                logger.info(f"🛑 步骤 {step} AI分析后检测到中断请求，停止执行")
+                return False
+            
+            # 3. 隐私保护处理（基于AI分析结果）
+            final_screenshot_path = screenshot_path
+            if self.privacy_enabled and ai_result.get("privacy_detection"):
+                privacy_info = self._process_privacy_from_ai_result(ai_result, screenshot_path)
+                if privacy_info.get("protected_screenshot"):
+                    final_screenshot_path = privacy_info["protected_screenshot"]
+            
+            # 4. 显示分析结果
             self._display_analysis_result(ai_result, step)
             
-            # 4. 检查任务是否完成
+            # 5. 检查任务是否完成
             if self._is_task_completed(ai_result):
-                self._handle_task_completion(ai_result, step, screenshot_path, xml_path)
+                self._handle_task_completion(ai_result, step, final_screenshot_path, xml_path)
                 return True
             
-            # 5. 生成标记图片（Open操作不需要标记）
+            # 6. 生成标记图片（Open操作不需要标记）
             label_path = None
             plan = ai_result.get("plan", {})
             action_type = plan.get("type", "").lower()
             
             # Open操作不生成标记，其他操作生成标记
             if action_type != "open":
-                label_path = self._generate_labeled_image(ai_result, step, screenshot_path)
+                label_path = self._generate_labeled_image(ai_result, step, final_screenshot_path)
             
-            # 6. 保存步骤数据
-            self._save_step_data(ai_result, step, screenshot_path, xml_path, label_path)
+            # 7. 保存步骤数据
+            self._save_step_data(ai_result, step, final_screenshot_path, xml_path, label_path)
             
-            # 7. 执行操作
+            # 8. 执行操作
             if not self._execute_action(ai_result.get("plan", {})):
                 logger.warning(f"⚠️  步骤 {step} 操作执行失败，但继续下一步...")
             
-            # 8. 记录历史步骤（在执行操作后）
-            self._record_history_step(plan)
+            # 检查中断请求
+            if self.is_interrupted:
+                logger.info(f"🛑 步骤 {step} 操作执行后检测到中断请求，停止执行")
+                return False
             
-            # 执行操作后等待2秒，让界面有时间响应
+            # 9. 记录历史步骤（在执行操作后）
+            observation = ai_result.get("observation", "")
+            self._record_history_step(plan, observation)
+            
+            # 执行操作后等待时间，同时检查中断
             if action_type == "open":
-                time.sleep(5)
+                for i in range(50):  # 5秒等待，每0.1秒检查一次中断
+                    if self.is_interrupted:
+                        logger.info(f"🛑 步骤 {step} 等待过程中检测到中断请求，停止执行")
+                        return False
+                    time.sleep(0.1)
             
             step += 1
         
@@ -239,12 +305,28 @@ class TaskExecutor:
         is_completed = ai_result.get("is_task_completed", False)
         completion_reason = ai_result.get("completion_reason", "")
         plan = ai_result.get("plan", {})
+        privacy_detection = ai_result.get("privacy_detection", {})
         
         logger.info(f"\n📊 AI分析结果:")
         logger.info(f"   观察: {observation}")
         logger.info(f"   任务完成: {'✅ 是' if is_completed else '❌ 否'}")
         if completion_reason:
             logger.info(f"   完成原因: {completion_reason}")
+        
+        # 显示隐私检测结果
+        if privacy_detection:
+            phone_numbers = privacy_detection.get("phone_numbers", [])
+            if phone_numbers:
+                phone_count = len(phone_numbers)
+                logger.info(f"   🔒 隐私检测: 发现 {phone_count} 个敏感手机号")
+                for i, phone_data in enumerate(phone_numbers, 1):
+                    phone_num = phone_data.get("phone_number", "")
+                    logger.info(f"      {i}. {phone_num}")
+            else:
+                logger.info(f"   🔒 隐私检测: 未发现敏感信息")
+        else:
+            logger.info(f"   🔒 隐私检测: 未发现敏感信息")
+        
         logger.info(f"   建议: {plan.get('description', '无建议')}")
         logger.info(f"   位置: {plan.get('position', '未提供')}")
     
@@ -481,12 +563,76 @@ class TaskExecutor:
         
         return label_path
 
-    def _record_history_step(self, plan: dict):
+    def _record_history_step(self, plan: dict, observation: str = ""):
         """记录历史步骤"""
         if plan and "description" in plan and "type" in plan:
             history_item = {
                 "description": plan["description"],
-                "type": plan["type"]
+                "type": plan["type"],
+                "observation": observation
             }
             self.history_steps.append(history_item)
             logger.debug(f"📝 历史步骤已记录: {history_item['description']} ({history_item['type']})") 
+
+    def _process_privacy_from_ai_result(self, ai_result: dict, screenshot_path: str) -> dict:
+        """基于AI分析结果处理隐私保护"""
+        try:
+            privacy_detection = ai_result.get("privacy_detection", {})
+                       
+            # 检查是否有手机号数据
+            phone_numbers_data = privacy_detection.get("phone_numbers", [])
+            if not phone_numbers_data:
+                return {"protected_screenshot": screenshot_path}
+            
+            # 转换AI检测结果为隐私保护器格式（简化版）
+            phone_numbers = []
+            for phone_data in phone_numbers_data:
+                # 解析bounds字符串
+                bounds_str = phone_data.get("bounds", "")
+                bbox = self._parse_bounds_string(bounds_str)
+                
+                if bbox:
+                    # 只使用必需的字段
+                    phone_info = {
+                        "display_number": phone_data.get("phone_number", ""),
+                        "bbox": bbox
+                    }
+                    phone_numbers.append(phone_info)
+            
+            if phone_numbers:
+                # 构建简化的隐私信息
+                privacy_info = {
+                    "phone_numbers": phone_numbers
+                }
+                
+                # 进行隐私保护处理
+                protected_path = self.privacy_protector.protect_screenshot(screenshot_path, privacy_info)
+                
+                logger.info(f"🔒 AI检测到隐私信息，已应用保护: {len(phone_numbers)} 个手机号")
+                return {"protected_screenshot": protected_path, "privacy_info": privacy_info}
+            
+            return {"protected_screenshot": screenshot_path}
+            
+        except Exception as e:
+            logger.error(f"❌ AI隐私保护处理失败: {e}")
+            return {"protected_screenshot": screenshot_path}
+    
+    def _parse_bounds_string(self, bounds_str: str) -> Optional[List[List[int]]]:
+        """解析bounds字符串"""
+        try:
+            import re
+            # 格式: [left,top][right,bottom]
+            pattern = r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]'
+            match = re.match(pattern, bounds_str)
+            
+            if match:
+                left, top, right, bottom = map(int, match.groups())
+                return [[left, top], [right, bottom]]
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ 边界解析失败: {e}")
+            return None
+
+ 

@@ -20,10 +20,11 @@ logger = get_logger(__name__)
 class BatchExecutor:
     """批量任务执行器 - 专门处理示例query"""
     
-    def __init__(self):
+    def __init__(self, task_output_base_dir="output"):
         self.excel_file = "验收通过数据/标贝采集需求.xlsx"
         self.target_sheets = ['爱奇艺', '懂车帝', '美团外卖', '饿了么']
         self.output_base_dir = "batch_output_0701"
+        self.task_output_base_dir = task_output_base_dir  # 单个任务的输出基础目录
         self.failed_queries = []
         self.success_count = 0
         self.total_count = 0
@@ -130,8 +131,8 @@ class BatchExecutor:
         """执行一组queries"""
         logger.info(f"\n🔄 开始执行{sheet_name}的{len(queries)}个查询...")
         
-        # 创建任务执行器
-        executor = TaskExecutor()
+        # 创建任务执行器，使用指定的输出基础目录
+        executor = TaskExecutor(output_base_dir=self.task_output_base_dir)
         
         # 记录执行结果
         execution_results = []
@@ -165,7 +166,8 @@ class BatchExecutor:
                 target_output = os.path.join(output_dir, f"{safe_query}")
                 
                 # 移动输出文件到sheet目录
-                original_output = f"output/{query}"
+                # 使用executor的实际输出目录而不是硬编码的"output"
+                original_output = executor.output_dir
                 if os.path.exists(original_output):
                     # 如果目标目录存在，先删除
                     if os.path.exists(target_output):
@@ -308,13 +310,14 @@ class BatchExecutor:
         
         logger.info(f"\n📄 详细报告已保存: {report_file}")
 
-def main():
+def main(task_output_base_dir="output"):
     """主函数"""
     try:
         logger.info("🤖 批量任务执行器启动")
         logger.info("📋 目标sheets: 爱奇艺, 懂车帝, 美团外卖, 饿了么")
         logger.info("📝 只处理'示例query'列的查询")
         logger.info("⚠️  注意: 请确保设备已连接且屏幕保持亮起")
+        logger.info(f"📁 单个任务输出基础目录: {os.path.abspath(task_output_base_dir)}")
         
         # 让用户选择执行模式
         logger.info("\n📋 执行选项:")
@@ -324,7 +327,7 @@ def main():
         
         choice = input("\n请选择 (1/2/3): ").strip()
         
-        batch_executor = BatchExecutor()
+        batch_executor = BatchExecutor(task_output_base_dir=task_output_base_dir)
         
         if choice == "2":
             # 让用户选择sheets
@@ -374,4 +377,11 @@ def main():
         logger.error(f"\n❌ 批量执行出错: {e}")
 
 if __name__ == "__main__":
-    main() 
+    # 支持命令行参数指定单个任务的输出基础目录
+    import sys
+    task_output_dir = "output"
+    if len(sys.argv) > 1:
+        task_output_dir = sys.argv[1]
+        logger.info(f"📁 使用命令行指定的任务输出目录: {task_output_dir}")
+    
+    main(task_output_base_dir=task_output_dir) 

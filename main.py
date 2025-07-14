@@ -14,7 +14,7 @@ from src.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-def main():
+def main(output_base_dir="output"):
     """主函数"""
     logger.info("=" * 60)
     logger.info("🤖 手机UI自动化任务执行器")
@@ -25,6 +25,7 @@ def main():
     
     # 创建输出文件夹
     os.makedirs("output_样例", exist_ok=True)
+    os.makedirs(output_base_dir, exist_ok=True)
     
     # 获取用户输入的任务
     logger.info("\n请输入您要执行的任务:")
@@ -37,7 +38,15 @@ def main():
         logger.error("❌ 任务描述不能为空")
         return False
     
+    # 询问输出目录（可选）
+    if output_base_dir == "output":
+        custom_output = input(f"\n📁 输出目录 (默认: {output_base_dir}): ").strip()
+        if custom_output:
+            output_base_dir = custom_output
+            os.makedirs(output_base_dir, exist_ok=True)
+    
     logger.info(f"\n🚀 准备执行任务: {query}")
+    logger.info(f"📁 输出目录: {os.path.abspath(output_base_dir)}")
     
     # 确认执行
     confirm = input("是否开始执行？(Y/n): ").strip().lower()
@@ -46,14 +55,14 @@ def main():
         return False
     
     # 创建任务执行器并运行
-    executor = TaskExecutor()
+    executor = TaskExecutor(output_base_dir=output_base_dir)
     
     try:
         success = executor.run_task(query)
         
         if success:
             logger.info("\n🎉 任务执行完成！")
-            logger.info(f"📁 输出文件保存在: {os.path.abspath('output')}")
+            logger.info(f"📁 输出文件保存在: {os.path.abspath(executor.output_dir)}")
         else:
             logger.error("\n❌ 任务执行失败")
             
@@ -72,8 +81,14 @@ def main():
         return False
 
 if __name__ == "__main__":
+    # 支持命令行参数指定输出目录
+    output_dir = "output"
+    if len(sys.argv) > 1:
+        output_dir = sys.argv[1]
+        logger.info(f"📁 使用命令行指定的输出目录: {output_dir}")
+    
     while True:
-        success = main()
+        success = main(output_base_dir=output_dir)
         
         # 询问用户是否继续
         continue_choice = input("\n是否继续执行新任务？(y/N): ").strip().lower()

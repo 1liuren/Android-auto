@@ -48,6 +48,20 @@ class Config:
         #最大执行次数
         self.max_execution_times = 50
         
+        # 隐私保护配置
+        self.privacy_protection = {
+            "enabled": True,  # 是否启用隐私保护
+            "auto_detect": True,  # 是否自动检测隐私敏感信息
+            "phone_anonymization": True,  # 是否启用手机号假名化
+            "debug_mode": False,  # 隐私处理调试模式
+            "temp_file_cleanup": True,  # 是否自动清理临时文件
+            "protection_keywords": [  # 隐私敏感关键词
+                '手机号', '电话', '联系方式', '个人信息', 
+                '隐私', '填写', '注册', '登录', '验证',
+                '联系人', '通讯录', '短信', '验证码'
+            ]
+        }
+        
         # 验证配置
         self._validate_config()
     
@@ -210,11 +224,31 @@ class Config:
 - 在订票等任务中，一般出发地为页面左边，目的地为页面右边，在选择出发地和目的地的搜索栏中，搜索栏中的提示文本可能都是“请输入目的城市/车站名”，这个不能作为判断当前是在选择出发地还是目的地的依据
 - 在xml信息中可能有当前页面隐藏的元素，需要上下滑动来查看，可以重点参考QwenVL提取的界面文本信息
 
+**隐私保护检测：**
+在分析界面时，请同时检测是否存在需要隐私保护的敏感信息：
+
+1. **手机号码检测规则：**
+   - 识别11位中国大陆手机号（1开头）
+   - 重点关注EditText输入框、TextView显示文本等元素
+
+2. **隐私检测输出：**
+   - 如果检测到手机号，在返回结果中包含privacy_detection字段
+   - 只需提供手机号码原始文本和bounds位置信息
+   - 如果没有检测到敏感信息，不输出privacy_detection字段
+
 请用JSON格式返回结果，格式如下：
 {{
     "observation": "界面状态描述",
     "is_task_completed": true/false,
     "completion_reason": "完成原因（如果已完成）",
+    "privacy_detection": {{
+        "phone_numbers": [
+            {{
+                "phone_number": "手机号码原始文本",
+                "bounds": "元素的bounds属性值"
+            }}
+        ]
+    }},
     "plan": {{
         "description": "操作描述",
         "type": "操作类型",
@@ -239,7 +273,8 @@ class Config:
             for i, step_info in enumerate(history_steps, 1):
                 step_desc = step_info.get('description', '未知操作')
                 step_type = step_info.get('type', '未知类型')
-                history_text += f"步骤{i}: {step_desc} (类型: {step_type})\n"
+                step_obs = step_info.get('observation', '')
+                history_text += f"步骤{i}: 手机界面状态为：{step_obs}；执行了: {step_desc} ;类型: {step_type})\n"
             history_text += "\n根据以上执行历史，请分析当前界面状态并决定下一步操作。如果上一步执行完任务了，请判断了任务完成。\n"
         
         return f"""
@@ -249,7 +284,7 @@ class Config:
 XML界面结构信息:
 {xml_content}
 
-请分析XML结构并告诉我下一步应该如何操作。请只返回一个JSON格式的响应，不要包含其他文本。"""
+请以上信息并告诉我下一步应该如何操作。请只返回一个JSON格式的响应，不要包含其他文本。"""
 
 # 创建全局配置实例
 config = Config() 

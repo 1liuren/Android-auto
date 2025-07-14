@@ -1,8 +1,12 @@
-uiautomator2==3.2.3
-adbutils==2.4.0
-Pillow>=9.0.0
-dashscope>=1.20.0
-lxml>=4.6.0
-pandas>=2.0.0
-openpyxl>=3.1.0
-loguru>=0.7.0 
+adbutils==2.9.3
+dashscope==1.23.8
+loguru==0.7.3
+lxml==6.0.0
+numpy==2.3.1
+pandas==2.3.1
+Pillow==11.3.0
+uiautomator2==3.3.3
+
+# GUI相关依赖
+ttkthemes==3.2.2
+openpyxl==3.1.2

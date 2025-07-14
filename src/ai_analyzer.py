@@ -49,6 +49,7 @@ class AIAnalyzer:
         
         while retry_count < max_retries:
             try:
+                # logger.info(f"模型输入: {user_prompt}")
                 response = Generation.call(
                     api_key=config.dashscope_api_key,
                     model=config.model_name,

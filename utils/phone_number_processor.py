@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import os
 from typing import List, Tuple, Optional
+import re
 
 class PhoneNumberProcessor:
     """
@@ -50,8 +51,8 @@ class PhoneNumberProcessor:
         Returns:
             bool: 是否处理成功
         """
-        # 1. 加载原始图像
-        img = cv2.imread(img_path)
+        # 1. 加载原始图像（解决中文路径问题）
+        img = self._imread_unicode(img_path)
         if img is None:
             print("无法读取图片，请检查路径！")
             return False
@@ -84,11 +85,14 @@ class PhoneNumberProcessor:
         # 5. 替换回原图
         result_img = self._replace_back_to_original(img, swapped_img, phone_region_box)
         
-        # 6. 保存结果
-        cv2.imwrite(output_path, result_img)
-        print(f"处理完成，结果已保存至: {output_path}")
+        # 6. 保存结果（解决中文路径问题）
+        success = self._imwrite_unicode(output_path, result_img)
+        if success:
+            print(f"处理完成，结果已保存至: {output_path}")
+        else:
+            print(f"保存失败: {output_path}")
         
-        return True
+        return success
     
     def center_symmetric_segmentation(self, img: np.ndarray, save_intermediate: bool = False) -> Tuple[np.ndarray, List[Tuple]]:
         """
@@ -160,18 +164,30 @@ class PhoneNumberProcessor:
         Args:
             img: 输入图像
             bboxes: 字符边界框列表
+            target_phone_number: 目标手机号字符串
             
         Returns:
             np.ndarray: 交换后的图像
         """
         if len(bboxes) < 2:
             return img
+        
+        # 清理手机号，去除空格等字符
+        clean_phone = re.sub(r'[\s\-\(\)\+]', '', target_phone_number)
+        if len(clean_phone) < len(bboxes):
+            # 如果清理后的手机号长度不够，使用原始字符串
+            clean_phone = target_phone_number
             
         # 随机选择两个不同的字符进行交换
-        while True:
-            idx1, idx2 = np.random.randint(3, min(len(bboxes)-1, len(bboxes)), 2)
-            if idx1 != idx2 and target_phone_number[idx1] != target_phone_number[idx2]:
-                break
+        max_tries = 10
+        for _ in range(max_tries):
+            idx1, idx2 = np.random.randint(3, min(len(bboxes), len(clean_phone)), 2)
+            if idx1 != idx2 and idx1 < len(clean_phone) and idx2 < len(clean_phone):
+                if clean_phone[idx1] != clean_phone[idx2]:
+                    break
+        else:
+            # 如果找不到合适的字符对，默认交换前两个可用的字符
+            idx1, idx2 = 0, 1
         
         print(f"交换第 {idx1} 和第 {idx2} 个字符")
         
@@ -323,6 +339,50 @@ class PhoneNumberProcessor:
             cv2.rectangle(restored_debug, (x, y), (x + w, y + h), (0, 0, 255), 1)
         cv2.imwrite("debug_restored_bboxes.jpg", restored_debug)
     
+    def _imread_unicode(self, img_path: str):
+        """
+        解决OpenCV在Windows下无法读取中文路径的问题
+        
+        Args:
+            img_path: 图片路径
+            
+        Returns:
+            np.ndarray: 图像数据，失败返回None
+        """
+        try:
+            # 使用numpy.fromfile读取文件
+            img_array = np.fromfile(img_path, dtype=np.uint8)
+            # 使用cv2.imdecode解码图像
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            return img
+        except Exception as e:
+            print(f"读取图片失败: {e}")
+            return None
+    
+    def _imwrite_unicode(self, img_path: str, img):
+        """
+        解决OpenCV在Windows下无法写入中文路径的问题
+        
+        Args:
+            img_path: 图片路径
+            img: 图像数据
+            
+        Returns:
+            bool: 是否写入成功
+        """
+        try:
+            # 使用cv2.imencode编码图像
+            ext = os.path.splitext(img_path)[1]
+            success, img_encoded = cv2.imencode(ext, img)
+            if success:
+                # 使用numpy.tofile写入文件
+                img_encoded.tofile(img_path)
+                return True
+            return False
+        except Exception as e:
+            print(f"写入图片失败: {e}")
+            return False
+    
     def analyze_background(self, img: np.ndarray, bbox: Tuple[int, int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
         分析边界框周围的背景特征
@@ -365,10 +425,10 @@ def main():
     processor = PhoneNumberProcessor()
     
     # 处理参数
-    img_path = "1-17.jpg"
+    img_path = "OCR/1-17.jpg"
     phone_region_box = [[452, 1292], [936, 1413]]  # 电话号码区域
     target_phone_number = "18810032768"  # 目标电话号码
-    output_path = "Final_Result.jpg"
+    output_path = "OCR/Final_Result.jpg"
     
     # 执行处理
     result = processor.process_phone_number(
