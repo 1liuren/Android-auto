@@ -12,6 +12,7 @@ from tkinter import messagebox
 
 # 添加src模块路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+from src.logger_config import get_logger
 
 from src.config import config
 from src.gui_config import gui_config
@@ -25,6 +26,7 @@ class ConfigManager:
     
     def __init__(self, gui_app):
         self.gui_app = gui_app
+        self.logger = get_logger("config_manager")
         
     def load_config(self):
         """加载配置"""
@@ -51,11 +53,11 @@ class ConfigManager:
             # 加载应用包名映射
             self._load_app_packages()
             
-            self.gui_app._log_output("✅ 配置加载完成")
+            self.logger.success("✅ 配置加载完成")
             return True
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 配置加载失败: {e}")
+            self.logger.error("❌ 配置加载失败: {e}")
             return False
     
     def save_config(self):
@@ -94,14 +96,14 @@ class ConfigManager:
             
             # 保存到文件
             if gui_config.save_config():
-                self.gui_app._log_output("✅ 配置保存成功")
+                self.logger.success("✅ 配置保存成功")
                 messagebox.showinfo("成功", "配置已保存！")
                 return True
             else:
                 raise Exception("配置文件保存失败")
                 
         except Exception as e:
-            self.gui_app._log_output(f"❌ 配置保存失败: {e}")
+            self.logger.error("❌ 配置保存失败: {e}")
             messagebox.showerror("错误", f"配置保存失败: {e}")
             return False
     
@@ -141,7 +143,7 @@ class ConfigManager:
                 self.gui_app.config_panel.update_app_package_tree()
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 加载应用包名映射失败: {e}")
+            self.logger.error("❌ 加载应用包名映射失败: {e}")
     
     def reset_config(self):
         """重置配置为默认值"""
@@ -152,11 +154,11 @@ class ConfigManager:
             # 重新加载配置
             self.load_config()
             
-            self.gui_app._log_output("🔄 配置已重置为默认值")
+            self.logger.info("🔄 配置已重置为默认值")
             messagebox.showinfo("成功", "配置已重置为默认值！")
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 重置配置失败: {e}")
+            self.logger.error("❌ 重置配置失败: {e}")
             messagebox.showerror("错误", f"重置配置失败: {e}")
     
     def export_config(self, file_path):
@@ -177,11 +179,11 @@ class ConfigManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(current_config, f, indent=2, ensure_ascii=False)
             
-            self.gui_app._log_output(f"✅ 配置已导出到: {file_path}")
+            self.logger.success("✅ 配置已导出到: {file_path}")
             messagebox.showinfo("成功", f"配置已导出到:\n{file_path}")
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 导出配置失败: {e}")
+            self.logger.error("❌ 导出配置失败: {e}")
             messagebox.showerror("错误", f"导出配置失败: {e}")
     
     def import_config(self, file_path):
@@ -210,11 +212,11 @@ class ConfigManager:
                 if hasattr(self.gui_app, 'config_panel'):
                     self.gui_app.config_panel.update_app_package_tree()
             
-            self.gui_app._log_output(f"✅ 配置已从文件导入: {file_path}")
+            self.logger.success("✅ 配置已从文件导入: {file_path}")
             messagebox.showinfo("成功", f"配置已从文件导入:\n{file_path}")
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 导入配置失败: {e}")
+            self.logger.error("❌ 导入配置失败: {e}")
             messagebox.showerror("错误", f"导入配置失败: {e}")
     
     def auto_save_config(self):
@@ -239,5 +241,5 @@ class ConfigManager:
             return True
             
         except Exception as e:
-            self.gui_app._log_output(f"⚠️ 自动保存配置失败: {e}")
+            self.logger.warning("⚠️ 自动保存配置失败: {e}")
             return False 

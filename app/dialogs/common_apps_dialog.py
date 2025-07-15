@@ -7,6 +7,12 @@
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import sys
+import os
+
+# 添加src模块路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+from src.logger_config import get_logger
 
 
 class CommonAppsDialog:
@@ -16,6 +22,7 @@ class CommonAppsDialog:
         self.parent = parent
         self.gui_app = gui_app
         self.dialog = None
+        self.logger = get_logger("common_apps_dialog")
         
         # 常用应用列表
         self.common_apps = {
@@ -262,13 +269,13 @@ class CommonAppsDialog:
                 self.gui_app.config_panel.update_app_package_tree()
             
             # 记录日志
-            self.gui_app._log_output(f"✅ 已添加常用应用: {app_name} -> {package_name}")
+            self.logger.success(f"✅ 已添加常用应用: {app_name} -> {package_name}")
             
             # 刷新按钮状态
             self._create_app_buttons()
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 添加应用失败: {e}")
+            self.logger.error(f"❌ 添加应用失败: {e}")
             messagebox.showerror("错误", f"添加应用失败: {e}", parent=self.dialog)
     
     def _add_all_apps(self):
@@ -291,7 +298,7 @@ class CommonAppsDialog:
                 self.gui_app.config_panel.update_app_package_tree()
             
             # 记录日志
-            self.gui_app._log_output(f"✅ 已添加 {added_count} 个常用应用")
+            self.logger.success(f"✅ 已添加 {added_count} 个常用应用")
             
             # 刷新按钮状态
             self._create_app_buttons()
@@ -299,7 +306,7 @@ class CommonAppsDialog:
             messagebox.showinfo("成功", f"已添加 {added_count} 个常用应用！", parent=self.dialog)
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 批量添加应用失败: {e}")
+            self.logger.error(f"❌ 批量添加应用失败: {e}")
             messagebox.showerror("错误", f"批量添加应用失败: {e}", parent=self.dialog)
     
     def _close_dialog(self):

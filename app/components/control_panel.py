@@ -158,18 +158,34 @@ class ControlPanel:
         # 列选择区域
         self._create_column_selection(batch_frame)
         
+        # 批量任务控制按钮区域
+        batch_button_frame = tk.Frame(batch_frame, bg=MODERN_COLORS['bg_secondary'])
+        batch_button_frame.grid(row=5, column=0, sticky="ew", pady=(15, 0))
+        
         # 批量执行按钮
         self.batch_execute_btn = create_icon_button(
-            batch_frame,
+            batch_button_frame,
             icon="⚡",
             text="批量执行",
             command=self._execute_batch_tasks,
             style_type="primary"
         )
-        self.batch_execute_btn.grid(row=5, column=0, sticky="w", pady=(15, 0))
+        self.batch_execute_btn.pack(side="left", padx=(0, 10))
+        
+        # 批量任务中断按钮
+        self.batch_interrupt_btn = create_icon_button(
+            batch_button_frame,
+            icon="⏹️",
+            text="中断批量任务",
+            command=self._interrupt_batch_task,
+            style_type="danger"
+        )
+        self.batch_interrupt_btn.pack(side="left")
+        self.batch_interrupt_btn.config(state="disabled")  # 初始禁用
         
         # 保存按钮引用到gui_app
         self.gui_app.batch_button = self.batch_execute_btn
+        self.gui_app.batch_interrupt_button = self.batch_interrupt_btn
     
     def _detect_device(self):
         """检测设备连接状态"""
@@ -485,6 +501,17 @@ class ControlPanel:
         else:
             messagebox.showerror("错误", "任务管理器未初始化！")
     
+    def _interrupt_batch_task(self):
+        """中断批量任务"""
+        if hasattr(self.gui_app, 'task_manager'):
+            success = self.gui_app.task_manager.cancel_current_task()
+            if success:
+                messagebox.showinfo("提示", "已向批量任务发送中断信号，请等待当前子任务完成...")
+            else:
+                messagebox.showinfo("提示", "当前没有正在执行的批量任务")
+        else:
+            messagebox.showerror("错误", "任务管理器未初始化！")
+    
     def _update_task_buttons(self, task_running):
         """更新任务相关按钮的显示状态"""
         if task_running:
@@ -495,6 +522,8 @@ class ControlPanel:
                 self.gui_app.batch_button.config(state="disabled")
             if hasattr(self.gui_app, 'interrupt_button'):
                 self.gui_app.interrupt_button.config(state="normal")
+            if hasattr(self.gui_app, 'batch_interrupt_button'):
+                self.gui_app.batch_interrupt_button.config(state="normal")
         else:
             # 任务完成时：启用执行按钮，禁用中断按钮
             if hasattr(self.gui_app, 'execute_button'):
@@ -503,6 +532,8 @@ class ControlPanel:
                 self.gui_app.batch_button.config(state="normal")
             if hasattr(self.gui_app, 'interrupt_button'):
                 self.gui_app.interrupt_button.config(state="disabled")
+            if hasattr(self.gui_app, 'batch_interrupt_button'):
+                self.gui_app.batch_interrupt_button.config(state="disabled")
     
     def get_buttons(self):
         """获取按钮列表（用于状态控制）"""
@@ -513,4 +544,6 @@ class ControlPanel:
             buttons.append(self.gui_app.batch_button)
         if hasattr(self.gui_app, 'interrupt_button'):
             buttons.append(self.gui_app.interrupt_button)
+        if hasattr(self.gui_app, 'batch_interrupt_button'):
+            buttons.append(self.gui_app.batch_interrupt_button)
         return buttons 

@@ -105,7 +105,17 @@ class DeviceController:
             
             # 测试截图功能
             logger.info("📸 测试截图功能...")
-            self.device.screenshot("test_connection.jpg")
+            test_screenshot_path = "test_connection.jpg"
+            self.device.screenshot(test_screenshot_path)
+            
+            # 测试完成后立即删除测试文件
+            try:
+                import os
+                if os.path.exists(test_screenshot_path):
+                    os.remove(test_screenshot_path)
+            except Exception as e:
+                logger.warning(f"⚠️ 清理测试截图文件失败: {e}")
+            
             logger.info("✅ 截图功能正常")
             
             return True

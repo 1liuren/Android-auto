@@ -13,6 +13,7 @@ import threading
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from src.device_controller import DeviceController
+from src.logger_config import get_logger
 
 
 class DeviceManager:
@@ -22,11 +23,12 @@ class DeviceManager:
         self.gui_app = gui_app
         self.device_controller = None
         self.device_info = None
+        self.logger = get_logger("device_manager")
         
     def refresh_device_info(self, callback=None):
         """刷新设备信息"""
         try:
-            self.gui_app._log_output("🔄 正在刷新设备信息...")
+            self.logger.info("🔄 正在刷新设备信息...")
             
             # 在新线程中获取设备信息
             threading.Thread(
@@ -36,38 +38,38 @@ class DeviceManager:
             ).start()
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 刷新设备信息失败: {e}")
+            self.logger.error(f"❌ 刷新设备信息失败: {e}")
     
     def _get_device_info(self, callback=None):
         """获取设备信息"""
         try:
-            self.gui_app._log_output("🔄 正在检测设备连接状态...")
+            self.logger.info("🔄 正在检测设备连接状态...")
             
             # 创建设备控制器
             self.device_controller = DeviceController()
             
             # 检测连接状态
             connection_result = self.device_controller.test_connection()
-            self.gui_app._log_output(f"🔗 连接测试结果: {connection_result}")
+            self.logger.info(f"🔗 连接测试结果: {connection_result}")
             
             if connection_result:
                 # 获取设备信息
                 self.device_info = self.device_controller.get_device_info()
-                self.gui_app._log_output(f"📱 设备信息获取结果: {bool(self.device_info)}")
+                self.logger.info(f"📱 设备信息获取结果: {bool(self.device_info)}")
                 
                 if self.device_info:
                     info_text = self._format_device_info(self.device_info)
                     color = "green"
-                    self.gui_app._log_output("✅ 设备连接正常，信息获取成功")
+                    self.logger.success("✅ 设备连接正常，信息获取成功")
                 else:
                     info_text = "📱 设备: 已连接但信息获取失败"
                     color = "orange"
-                    self.gui_app._log_output("⚠️ 设备已连接但无法获取详细信息")
+                    self.logger.warning("⚠️ 设备已连接但无法获取详细信息")
             else:
                 info_text = "📱 设备: 未连接"
                 color = "red"
                 self.device_info = None
-                self.gui_app._log_output("❌ 设备未连接或ADB不可用")
+                self.logger.error("❌ 设备未连接或ADB不可用")
             
             # 更新UI（在主线程中执行）
             self.gui_app.root.after(0, lambda: self._update_device_info_ui(info_text, color))
@@ -78,7 +80,7 @@ class DeviceManager:
             
         except Exception as e:
             self.gui_app.root.after(0, lambda: self._update_device_info_ui("📱 设备: 检测失败", "red"))
-            self.gui_app._log_output(f"❌ 设备信息获取失败: {e}")
+            self.logger.error(f"❌ 设备信息获取失败: {e}")
             
             if callback:
                 callback(False, None)

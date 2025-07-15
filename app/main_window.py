@@ -18,6 +18,10 @@ try:
 except ImportError:
     THEMES_AVAILABLE = False
 
+# 统一日志系统
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+from src.logger_config import init_default_logger, setup_gui_logger, get_logger
+
 # 导入组件
 from .components.control_panel import ControlPanel
 from .components.config_panel import ConfigPanel
@@ -42,6 +46,9 @@ class PhoneAutomationMainWindow:
         
         # 初始化变量
         self._init_variables()
+        
+        # 初始化统一日志系统
+        self._setup_unified_logging()
         
         # 初始化管理器
         self._init_managers()
@@ -89,6 +96,7 @@ class PhoneAutomationMainWindow:
         self.execute_button = None
         self.batch_button = None
         self.interrupt_button = None
+        self.batch_interrupt_button = None
         self.output_text = None
         self.status_label = None
         self.time_label = None
@@ -101,6 +109,10 @@ class PhoneAutomationMainWindow:
         self.max_steps_var = None
         self.privacy_enabled_var = None
         self.excel_path_var = None
+        
+        # 统一日志系统
+        self.unified_logger = None
+        self._gui_log_callback = None
         self.column_var = None
         self.new_app_name_var = None
         self.new_package_name_var = None
@@ -116,6 +128,26 @@ class PhoneAutomationMainWindow:
         
         # 应用包名映射
         self.app_packages = {}
+    
+    def _setup_unified_logging(self):
+        """设置统一日志系统"""
+        try:
+            # 初始化统一日志系统（启用GUI输出）
+            self.unified_logger = init_default_logger(enable_gui=True)
+            
+            # 设置GUI日志回调（将在OutputPanel创建后配置）
+            self._gui_log_callback = self._handle_log_message
+            
+        except Exception as e:
+            print(f"初始化统一日志系统失败: {e}")
+    
+    def _handle_log_message(self, message):
+        """处理来自统一日志系统的消息"""
+        try:
+            # 线程安全地添加到输出队列
+            self.output_queue.put(message)
+        except Exception as e:
+            print(f"处理日志消息失败: {e}")
     
     def _init_managers(self):
         """初始化管理器"""
@@ -189,6 +221,10 @@ class PhoneAutomationMainWindow:
         # 底部输出区域
         self.output_panel = OutputPanel(self.scrollable_frame, self)
         self.output_panel.grid(row=1, column=0, sticky="nsew", pady=(20, 0), padx=10)
+        
+        # 设置GUI日志回调到统一日志系统
+        if self._gui_log_callback:
+            setup_gui_logger(self._gui_log_callback)
         
         # 配置滚动区域
         self.scrollable_frame.columnconfigure(0, weight=1)
@@ -335,11 +371,25 @@ class PhoneAutomationMainWindow:
             self.root.after(100, self._check_output_queue)
     
     def _log_output(self, message):
-        """输出日志信息"""
-        if hasattr(self.output_panel, 'log_message'):
-            self.output_panel.log_message(message)
+        """输出日志信息（使用统一日志系统）"""
+        if self.unified_logger:
+            # 使用统一日志系统
+            if '✅' in message or '成功' in message:
+                self.unified_logger.success(message)
+            elif '❌' in message or '错误' in message or '失败' in message:
+                self.unified_logger.error(message)
+            elif '⚠️' in message or '警告' in message:
+                self.unified_logger.warning(message)
+            elif '🚀' in message or '开始' in message:
+                self.unified_logger.info(message)
+            else:
+                self.unified_logger.info(message)
         else:
-            print(f"[LOG] {message}")
+            # 降级到原有方式
+            if hasattr(self.output_panel, 'log_message'):
+                self.output_panel.log_message(message)
+            else:
+                print(f"[LOG] {message}")
     
     def _set_buttons_state(self, enabled):
         """设置按钮状态"""

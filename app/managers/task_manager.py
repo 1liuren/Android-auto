@@ -17,6 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from src.task_executor import TaskExecutor
 from src.config import config
+from src.logger_config import get_logger
 from ..utils.validators import (
     validate_task_description, validate_batch_execution_params
 )
@@ -31,17 +32,18 @@ class TaskManager:
         self.current_task = None
         self.task_executor = None
         self.cancel_requested = False
+        self.logger = get_logger("task_manager")
         
     def execute_single_task(self, task_query):
         """执行单个任务"""
         # 验证任务描述
         is_valid, msg = validate_task_description(task_query)
         if not is_valid:
-            self.gui_app._log_output(f"❌ 任务验证失败: {msg}")
+            self.logger.error(f"❌ 任务验证失败: {msg}")
             return False
         
         if self.current_task and self.current_task.is_alive():
-            self.gui_app._log_output("⚠️ 当前有任务正在执行")
+            self.logger.warning("⚠️ 当前有任务正在执行")
             return False
         
         # 重置中断标志
@@ -64,13 +66,30 @@ class TaskManager:
     def _run_single_task(self, query):
         """在新线程中运行单个任务"""
         try:
-            self.gui_app._log_output(f"🚀 开始执行任务: {query}")
+            self.logger.info(f"🚀 开始执行任务: {query}")
             
             # 检查是否被取消
             if self.cancel_requested:
-                self.gui_app._log_output("⚠️ 任务已被用户取消")
+                self.logger.warning("⚠️ 任务已被用户取消")
                 self.gui_app._update_status("⚠️ 已取消", "orange")
                 return
+            
+            # 同步前端配置到后端config
+            api_key = self.gui_app.api_key_var.get()
+            if api_key:
+                config.dashscope_api_key = api_key
+                self.logger.info("🔑 API Key已从前端同步到后端")
+            else:
+                self.logger.warning("⚠️ 前端未配置API Key")
+            
+            # 同步其他配置
+            max_steps = self.gui_app.max_steps_var.get()
+            if max_steps:
+                config.max_execution_times = int(max_steps)
+            
+            device_id = self.gui_app.device_id_var.get()
+            if device_id:
+                config.device_id = device_id
             
             # 创建任务执行器
             output_dir = self.gui_app.output_dir_var.get() or "output"
@@ -83,20 +102,20 @@ class TaskManager:
             success = self._execute_with_cancel_check(query)
             
             if self.cancel_requested:
-                self.gui_app._log_output("⚠️ 任务执行过程中被取消")
+                self.logger.warning("⚠️ 任务执行过程中被取消")
                 self.gui_app._update_status("⚠️ 已取消", "orange")
             elif success:
-                self.gui_app._log_output("✅ 任务执行完成！")
+                self.logger.success("✅ 任务执行完成！")
                 self.gui_app._update_status("✅ 完成", "green")
                 
                 # 询问是否打开输出目录
                 self.gui_app.root.after(0, lambda: self.gui_app._ask_open_output(self.task_executor.output_dir))
             else:
-                self.gui_app._log_output("❌ 任务执行失败")
+                self.logger.error("❌ 任务执行失败")
                 self.gui_app._update_status("❌ 失败", "red")
                 
         except Exception as e:
-            self.gui_app._log_output(f"❌ 任务执行异常: {e}")
+            self.logger.error(f"❌ 任务执行异常: {e}")
             self.gui_app._update_status("❌ 异常", "red")
         finally:
             # 重新启用按钮，隐藏中断按钮
@@ -117,7 +136,7 @@ class TaskManager:
             return success and not self.cancel_requested
         except Exception as e:
             if self.cancel_requested:
-                self.gui_app._log_output("⚠️ 任务在执行过程中被中断")
+                self.logger.warning("⚠️ 任务在执行过程中被中断")
                 return False
             raise e
     
@@ -137,11 +156,11 @@ class TaskManager:
         # 验证批量执行参数
         is_valid, msg = validate_batch_execution_params(excel_path, selected_sheets, target_column)
         if not is_valid:
-            self.gui_app._log_output(f"❌ 批量任务验证失败: {msg}")
+            self.logger.error(f"❌ 批量任务验证失败: {msg}")
             return False
         
         if self.current_task and self.current_task.is_alive():
-            self.gui_app._log_output("⚠️ 当前有任务正在执行")
+            self.logger.warning("⚠️ 当前有任务正在执行")
             return False
         
         # 重置中断标志
@@ -164,11 +183,11 @@ class TaskManager:
     def _run_batch_tasks(self, excel_path, selected_sheets, target_column):
         """在新线程中运行批量任务"""
         try:
-            self.gui_app._log_output(f"📊 开始批量执行: {len(selected_sheets)} 个Sheet，处理列: {target_column}")
+            self.logger.info(f"📊 开始批量执行: {len(selected_sheets)} 个Sheet，处理列: {target_column}")
             
             # 检查是否被取消
             if self.cancel_requested:
-                self.gui_app._log_output("⚠️ 批量任务已被用户取消")
+                self.logger.warning("⚠️ 批量任务已被用户取消")
                 self.gui_app._update_status("⚠️ 已取消", "orange")
                 return
             
@@ -176,17 +195,17 @@ class TaskManager:
             success = self._execute_custom_batch(excel_path, selected_sheets, target_column)
             
             if self.cancel_requested:
-                self.gui_app._log_output("⚠️ 批量任务执行过程中被取消")
+                self.logger.warning("⚠️ 批量任务执行过程中被取消")
                 self.gui_app._update_status("⚠️ 已取消", "orange")
             elif success:
-                self.gui_app._log_output("✅ 批量任务执行完成！")
+                self.logger.success("✅ 批量任务执行完成！")
                 self.gui_app._update_status("✅ 批量完成", "green")
             else:
-                self.gui_app._log_output("❌ 批量任务执行失败")
+                self.logger.error("❌ 批量任务执行失败")
                 self.gui_app._update_status("❌ 批量失败", "red")
                 
         except Exception as e:
-            self.gui_app._log_output(f"❌ 批量任务执行异常: {e}")
+            self.logger.error(f"❌ 批量任务执行异常: {e}")
             self.gui_app._update_status("❌ 批量异常", "red")
         finally:
             # 重新启用按钮，隐藏中断按钮
@@ -195,17 +214,26 @@ class TaskManager:
     def _execute_custom_batch(self, excel_path, selected_sheets, target_column):
         """执行自定义批量任务"""
         try:
-            # 设置输出目录
+            # 同步前端配置到后端config
+            api_key = self.gui_app.api_key_var.get()
+            if api_key:
+                config.dashscope_api_key = api_key
+                self.logger.info("🔑 API Key已从前端同步到后端")
+            else:
+                self.logger.warning("⚠️ 前端未配置API Key")
+                
+            # 同步其他配置
+            max_steps = self.gui_app.max_steps_var.get()
+            if max_steps:
+                config.max_execution_times = int(max_steps)
+            
+            device_id = self.gui_app.device_id_var.get()
+            if device_id:
+                config.device_id = device_id
+                
+            # 设置输出目录 - 直接使用batch_output作为根目录
             batch_output_base = self.gui_app.batch_output_dir_var.get() or "batch_output"
-            batch_output_dir = os.path.join(batch_output_base, f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-            os.makedirs(batch_output_dir, exist_ok=True)
-            
-            # 创建任务执行器
-            task_output_dir = f"{output_dir}_tasks"
-            executor = TaskExecutor(output_base_dir=task_output_dir)
-            
-            # 保存executor引用用于中断
-            self.task_executor = executor
+            os.makedirs(batch_output_base, exist_ok=True)
             
             # 更新任务执行器的应用包名映射
             config.app_packages.update(self.gui_app.app_packages)
@@ -220,21 +248,21 @@ class TaskManager:
             for sheet_name in selected_sheets:
                 # 检查是否被取消
                 if self.cancel_requested:
-                    self.gui_app._log_output(f"🛑 批量任务在处理Sheet '{sheet_name}' 前被中断")
+                    self.logger.warning(f"🛑 批量任务在处理Sheet '{sheet_name}' 前被中断")
                     return False
                 
-                self.gui_app._log_output(f"\n📋 处理Sheet: {sheet_name}")
+                self.logger.info(f"\n📋 处理Sheet: {sheet_name}")
                 
                 # 读取sheet数据
                 df = pd.read_excel(excel_file, sheet_name=sheet_name)
                 
                 # 检查目标列是否存在
                 if target_column not in df.columns:
-                    self.gui_app._log_output(f"⚠️ Sheet '{sheet_name}' 中未找到列 '{target_column}'，跳过")
+                    self.logger.warning(f"⚠️ Sheet '{sheet_name}' 中未找到列 '{target_column}'，跳过")
                     continue
                 
-                # 创建sheet输出目录
-                sheet_output_dir = os.path.join(batch_output_dir, sheet_name)
+                # 创建sheet输出目录 - 直接在batch_output_base下
+                sheet_output_dir = os.path.join(batch_output_base, sheet_name)
                 os.makedirs(sheet_output_dir, exist_ok=True)
                 
                 # 提取任务列表
@@ -248,22 +276,39 @@ class TaskManager:
                             'sheet': sheet_name
                         })
                 
-                self.gui_app._log_output(f"📝 从Sheet '{sheet_name}' 的列 '{target_column}' 中提取到 {len(queries)} 个任务")
+                self.logger.info(f"📝 从Sheet '{sheet_name}' 的列 '{target_column}' 中提取到 {len(queries)} 个任务")
                 
                 # 执行任务
                 sheet_results = []
                 for i, query_info in enumerate(queries, 1):
                     # 检查是否被取消
                     if self.cancel_requested:
-                        self.gui_app._log_output(f"🛑 批量任务在第 {i}/{len(queries)} 个任务时被中断")
+                        self.logger.warning(f"🛑 批量任务在第 {i}/{len(queries)} 个任务时被中断")
                         return False
                     
                     query = query_info['query']
                     row_num = query_info['row']
                     
-                    self.gui_app._log_output(f"🔄 执行任务 {i}/{len(queries)}: {query}")
+                    self.logger.info(f"🔄 执行任务 {i}/{len(queries)}: {query}")
                     
                     try:
+                        # 为每个任务创建独立的执行器，直接输出到目标路径
+                        safe_query = safe_filename(query)
+                        task_output_path = os.path.join(sheet_output_dir, safe_query)
+                        
+                        # 如果同名目录已存在，添加序号区分
+                        if os.path.exists(task_output_path):
+                            counter = 1
+                            while os.path.exists(f"{task_output_path}_{counter}"):
+                                counter += 1
+                            task_output_path = f"{task_output_path}_{counter}"
+                        
+                        # 创建任务执行器，直接输出到目标路径
+                        executor = TaskExecutor(output_base_dir=sheet_output_dir)
+                        
+                        # 保存executor引用用于中断
+                        self.task_executor = executor
+                        
                         # 执行单个任务
                         start_time = datetime.now()
                         success = executor.run_task(query)
@@ -272,21 +317,21 @@ class TaskManager:
                         
                         # 再次检查是否被取消（任务执行后）
                         if self.cancel_requested:
-                            self.gui_app._log_output(f"🛑 批量任务在任务 {i}/{len(queries)} 执行完成后被中断")
+                            self.logger.warning(f"🛑 批量任务在任务 {i}/{len(queries)} 执行完成后被中断")
                             return False
                         
-                        # 移动输出文件
+                        # 重命名输出目录为正确的名称（如果需要）
                         if success and os.path.exists(executor.output_dir):
-                            safe_query = safe_filename(query)
-                            target_path = os.path.join(sheet_output_dir, f"row_{row_num}_{safe_query}")
-                            
-                            if os.path.exists(target_path):
+                            actual_output = executor.output_dir
+                            if actual_output != task_output_path:
+                                if os.path.exists(task_output_path):
+                                    import shutil
+                                    shutil.rmtree(task_output_path)
+                                
                                 import shutil
-                                shutil.rmtree(target_path)
+                                shutil.move(actual_output, task_output_path)
                             
-                            import shutil
-                            shutil.move(executor.output_dir, target_path)
-                            self.gui_app._log_output(f"📁 任务结果已保存到: {target_path}")
+                            self.logger.info(f"📁 任务结果已保存到: {task_output_path}")
                         
                         # 记录结果
                         result = {
@@ -295,6 +340,7 @@ class TaskManager:
                             'sheet': sheet_name,
                             'success': success,
                             'execution_time': execution_time,
+                            'output_path': task_output_path if success else None,
                             'timestamp': start_time.isoformat()
                         }
                         sheet_results.append(result)
@@ -302,13 +348,13 @@ class TaskManager:
                         total_tasks += 1
                         if success:
                             success_tasks += 1
-                            self.gui_app._log_output(f"✅ 任务完成，用时 {execution_time:.1f} 秒")
+                            self.logger.success(f"✅ 任务完成，用时 {execution_time:.1f} 秒")
                         else:
                             failed_tasks.append(query_info)
-                            self.gui_app._log_output(f"❌ 任务失败，用时 {execution_time:.1f} 秒")
+                            self.logger.error(f"❌ 任务失败，用时 {execution_time:.1f} 秒")
                             
                     except Exception as e:
-                        self.gui_app._log_output(f"❌ 执行任务时出错: {e}")
+                        self.logger.error(f"❌ 执行任务时出错: {e}")
                         failed_tasks.append(query_info)
                         total_tasks += 1
                 
@@ -317,18 +363,18 @@ class TaskManager:
                 with open(results_file, 'w', encoding='utf-8') as f:
                     json.dump(sheet_results, f, indent=2, ensure_ascii=False)
                 
-                self.gui_app._log_output(f"📄 Sheet '{sheet_name}' 执行结果已保存: {results_file}")
+                self.logger.info(f"📄 Sheet '{sheet_name}' 执行结果已保存: {results_file}")
             
             # 生成总体报告
-            self._generate_batch_report(batch_output_dir, total_tasks, success_tasks, failed_tasks, target_column)
+            self._generate_batch_report(batch_output_base, total_tasks, success_tasks, failed_tasks, target_column)
             
             # 询问是否打开输出目录
-            self.gui_app.root.after(0, lambda: self.gui_app._ask_open_output(batch_output_dir))
+            self.gui_app.root.after(0, lambda: self.gui_app._ask_open_output(batch_output_base))
             
             return True
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 自定义批量执行失败: {e}")
+            self.logger.error(f"❌ 自定义批量执行失败: {e}")
             return False
     
     def _generate_batch_report(self, output_dir, total_tasks, success_tasks, failed_tasks, target_column):
@@ -351,16 +397,16 @@ class TaskManager:
                 json.dump(report, f, indent=2, ensure_ascii=False)
             
             # 输出报告摘要
-            self.gui_app._log_output(f"\n📊 批量执行报告:")
-            self.gui_app._log_output(f"   总任务数: {total_tasks}")
-            self.gui_app._log_output(f"   成功: {success_tasks}")
-            self.gui_app._log_output(f"   失败: {len(failed_tasks)}")
-            self.gui_app._log_output(f"   成功率: {report['summary']['success_rate']:.1f}%")
-            self.gui_app._log_output(f"   处理列: {target_column}")
-            self.gui_app._log_output(f"📄 详细报告已保存: {report_file}")
+            self.logger.info("\n📊 批量执行报告:")
+            self.logger.info(f"   总任务数: {total_tasks}")
+            self.logger.info(f"   成功: {success_tasks}")
+            self.logger.info(f"   失败: {len(failed_tasks)}")
+            self.logger.info(f"   成功率: {report['summary']['success_rate']:.1f}%")
+            self.logger.info(f"   处理列: {target_column}")
+            self.logger.info(f"📄 详细报告已保存: {report_file}")
             
         except Exception as e:
-            self.gui_app._log_output(f"❌ 生成报告失败: {e}")
+            self.logger.error(f"❌ 生成报告失败: {e}")
     
     def is_task_running(self):
         """检查是否有任务正在运行"""
@@ -369,21 +415,21 @@ class TaskManager:
     def cancel_current_task(self):
         """取消当前任务"""
         if self.current_task and self.current_task.is_alive():
-            self.gui_app._log_output("🛑 正在取消当前任务...")
+            self.logger.warning("🛑 正在取消当前任务...")
             self.cancel_requested = True
             
             # 如果有任务执行器，调用其中断方法
             if self.task_executor:
                 try:
                     self.task_executor.interrupt_task()
-                    self.gui_app._log_output("🛑 已向任务执行器发送中断信号")
+                    self.logger.warning("🛑 已向任务执行器发送中断信号")
                 except Exception as e:
-                    self.gui_app._log_output(f"⚠️ 中断任务执行器时出错: {e}")
+                    self.logger.warning(f"⚠️ 中断任务执行器时出错: {e}")
             
             self.gui_app._update_status("🛑 正在取消...", "orange")
             return True
         else:
-            self.gui_app._log_output("ℹ️ 没有正在运行的任务")
+            self.logger.info("ℹ️ 没有正在运行的任务")
             return False
     
     def get_task_status(self):
