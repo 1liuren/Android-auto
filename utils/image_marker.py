@@ -30,27 +30,43 @@ class ImageMarker:
             img = Image.open(screenshot_path).convert("RGB")
             draw = ImageDraw.Draw(img)
             
-            if action_type.lower() == "swipe":
+            # 兼容旧的操作类型名称
+            normalized_type = action_type.lower()
+            if normalized_type == "tap":
+                normalized_type = "touch"
+            elif normalized_type == "typing":
+                normalized_type = "input"
+            elif normalized_type == "swipe":
+                normalized_type = "scroll"
+            
+            if normalized_type in ["scroll", "drag"]:
                 # 优先使用新格式参数
                 s_start = start_position or swipe_start
                 s_end = stop_position or swipe_end
                 
                 if s_start and s_end:
-                    # 标记滑动操作
-                    ImageMarker._draw_swipe_marker(draw, s_start, s_end, box)
-                    logger.info(f"✅ 标记滑动路径: ({s_start[0]}, {s_start[1]}) -> ({s_end[0]}, {s_end[1]})")
+                    # 标记滑动/拖动操作
+                    ImageMarker._draw_swipe_marker(draw, s_start, s_end, box, normalized_type)
+                    operation_name = "滑动" if normalized_type == "scroll" else "拖动"
+                    logger.info(f"✅ 标记{operation_name}路径: ({s_start[0]}, {s_start[1]}) -> ({s_end[0]}, {s_end[1]})")
                 else:
-                    logger.warning("⚠️  滑动操作缺少起始或结束位置，保存原图")
-            else:
-                # 标记点击操作
+                    logger.warning(f"⚠️  {normalized_type}操作缺少起始或结束位置，保存原图")
+            elif normalized_type in ["touch", "long_touch", "input"]:
+                # 标记点击类操作
                 center_x, center_y = ImageMarker._get_center_position(position, box)
                 
                 if center_x is not None and center_y is not None:
                     # 绘制控件整体框和标记点
-                    ImageMarker._draw_marker(draw, center_x, center_y, box)
-                    logger.info(f"✅ 标记点击位置: ({center_x}, {center_y})")
+                    ImageMarker._draw_marker(draw, center_x, center_y, box, normalized_type)
+                    operation_name = {"touch": "点击", "long_touch": "长按", "input": "输入"}[normalized_type]
+                    logger.info(f"✅ 标记{operation_name}位置: ({center_x}, {center_y})")
                 else:
-                    logger.warning("⚠️  无法确定点击位置，保存原图")
+                    logger.warning("⚠️  无法确定操作位置，保存原图")
+            elif normalized_type == "wait":
+                # 等待操作不需要标记，保存原图
+                logger.info("✅ 等待操作无需标记，保存原图")
+            else:
+                logger.warning(f"⚠️  未知操作类型: {normalized_type}，保存原图")
             
             img.save(output_path)
             return True
@@ -78,67 +94,97 @@ class ImageMarker:
         return None, None
     
     @staticmethod
-    def _draw_marker(draw: ImageDraw.Draw, center_x: int, center_y: int, box: list = None):
-        """绘制简洁的点击标记（控件整体框+标记点）"""
+    def _draw_marker(draw: ImageDraw.Draw, center_x: int, center_y: int, box: list = None, operation_type: str = "touch"):
+        """绘制操作标记（控件整体框+标记点）"""
+        # 根据操作类型选择颜色
+        colors = {
+            "touch": "red",        # 普通点击 - 红色
+            "long_touch": "orange", # 长按 - 橙色
+            "input": "blue"        # 输入 - 蓝色
+        }
+        color = colors.get(operation_type, "red")
+        
         # 先绘制控件整体框（如果提供了box参数）
         if box:
             widget_coords = ImageMarker._parse_box_coordinates(box)
             if widget_coords:
                 x1, y1, x2, y2 = widget_coords
-                # 绘制控件整体框（红色）
-                draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+                # 绘制控件整体框
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
                 logger.debug(f"🔷 控件整体框: ({x1}, {y1}) -> ({x2}, {y2})")
         
-        # 绘制点击中心点（红色圆点）
-        point_size = 10
+        # 绘制操作中心点
+        point_size = 12 if operation_type == "long_touch" else 10
         draw.ellipse([center_x - point_size, center_y - point_size, 
                      center_x + point_size, center_y + point_size], 
-                    fill="red", outline="red")
+                    fill=color, outline=color)
         
-        # 绘制小范围标记框（30x30像素的方框）
-        box_size = 15
+        # 绘制小范围标记框
+        box_size = 18 if operation_type == "long_touch" else 15
         small_box = [center_x - box_size, center_y - box_size, 
                     center_x + box_size, center_y + box_size]
-        draw.rectangle(small_box, outline="red", width=2)
+        draw.rectangle(small_box, outline=color, width=2)
         
-        # 绘制十字中心线
-        line_length = 12
-        # 横线
-        draw.line([center_x - line_length, center_y, center_x + line_length, center_y], 
-                 fill="red", width=2)
-        # 竖线
-        draw.line([center_x, center_y - line_length, center_x, center_y + line_length], 
-                 fill="red", width=2)
+        # 绘制标识符号
+        line_length = 15 if operation_type == "long_touch" else 12
+        
+        if operation_type == "touch":
+            # 普通点击：十字中心线
+            draw.line([center_x - line_length, center_y, center_x + line_length, center_y], 
+                     fill=color, width=2)
+            draw.line([center_x, center_y - line_length, center_x, center_y + line_length], 
+                     fill=color, width=2)
+        elif operation_type == "long_touch":
+            # 长按：双重圆圈
+            outer_size = point_size + 6
+            draw.ellipse([center_x - outer_size, center_y - outer_size, 
+                         center_x + outer_size, center_y + outer_size], 
+                        outline=color, width=2)
+        elif operation_type == "input":
+            # 输入：键盘符号（简化的矩形）
+            keyboard_width, keyboard_height = 8, 4
+            draw.rectangle([center_x - keyboard_width, center_y - keyboard_height, 
+                           center_x + keyboard_width, center_y + keyboard_height], 
+                          outline=color, fill=color)
     
     @staticmethod
-    def _draw_swipe_marker(draw: ImageDraw.Draw, start_pos: list, end_pos: list, box: list = None):
-        """绘制滑动操作标记"""
+    def _draw_swipe_marker(draw: ImageDraw.Draw, start_pos: list, end_pos: list, box: list = None, operation_type: str = "scroll"):
+        """绘制滑动/拖动操作标记"""
         fx, fy = int(start_pos[0]), int(start_pos[1])
         tx, ty = int(end_pos[0]), int(end_pos[1])
         
-        # 先绘制滑动区域框（如果提供了box参数）- 红色
+        # 根据操作类型选择颜色
+        colors = {
+            "scroll": {"area": "blue", "line": "blue", "start": "lightblue", "end": "darkblue"},
+            "drag": {"area": "purple", "line": "purple", "start": "lightpink", "end": "darkred"}
+        }
+        color_scheme = colors.get(operation_type, colors["scroll"])
+        
+        # 先绘制操作区域框（如果提供了box参数）
         if box:
             widget_coords = ImageMarker._parse_box_coordinates(box)
             if widget_coords:
                 x1, y1, x2, y2 = widget_coords
-                # 绘制滑动区域框（红色）
-                draw.rectangle([x1, y1, x2, y2], outline="red", width=4)
-                logger.debug(f"🔴 滑动区域框: ({x1}, {y1}) -> ({x2}, {y2})")
+                # 绘制操作区域框
+                draw.rectangle([x1, y1, x2, y2], outline=color_scheme["area"], width=4)
+                operation_name = "滑动" if operation_type == "scroll" else "拖动"
+                logger.debug(f"🔷 {operation_name}区域框: ({x1}, {y1}) -> ({x2}, {y2})")
         
-        # 绘制滑动路径（蓝色粗线）
-        draw.line([fx, fy, tx, ty], fill="blue", width=6)
+        # 绘制操作路径（粗线）
+        line_width = 8 if operation_type == "drag" else 6
+        draw.line([fx, fy, tx, ty], fill=color_scheme["line"], width=line_width)
         
-        # 绘制起点（绿色圆圈）
-        start_size = 12
+        # 绘制起点
+        start_size = 14 if operation_type == "drag" else 12
         draw.ellipse([fx - start_size, fy - start_size, 
                      fx + start_size, fy + start_size], 
-                    outline="green", fill="lightgreen", width=3)
+                    outline="green", fill=color_scheme["start"], width=3)
         
-        # 绘制终点（红色圆圈）
-        end_size = 12
+        # 绘制终点
+        end_size = 14 if operation_type == "drag" else 12
         draw.ellipse([tx - end_size, ty - end_size, 
                      tx + end_size, ty + end_size], 
-                    outline="red", fill="lightcoral", width=3)
+                    outline="red", fill=color_scheme["end"], width=3)
         
         # 绘制箭头指向（在路径末端）
         # 计算箭头方向
