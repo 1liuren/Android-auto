@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from typing import List, Tuple, Optional, Dict
 from .config import config
 from .logger_config import get_logger
+from utils.text_processor import TextProcessor
 from utils.phone_number_processor import PhoneNumberProcessor
 
 logger = get_logger(__name__)
@@ -23,6 +24,7 @@ class PrivacyProtector:
     
     def __init__(self):
         self.phone_processor = PhoneNumberProcessor(debug_mode=config.privacy_protection.get("debug_mode", False))
+        self.text_processor = TextProcessor(debug_mode=config.privacy_protection.get("debug_mode", False))
         self.protection_enabled = config.privacy_protection.get("enabled", True)
     
     def check_privacy_sensitivity(self, xml_content: str, screenshot_path: str) -> Dict:
@@ -76,6 +78,36 @@ class PrivacyProtector:
                     logger.info(f"✅ 手机号 {phone_info['display_number']} 已假名化")
                 else:
                     logger.warning(f"⚠️ 手机号 {phone_info['display_number']} 假名化失败")
+
+            for i, text_info in enumerate(privacy_info.get("addresses", [])):
+                temp_path = f"{base_name}_temp_{i}.jpg"
+                
+                success = self._anonymize_text(
+                    current_path,
+                    text_info,
+                    temp_path
+                )
+                
+                if success:
+                    current_path = temp_path
+                    logger.info(f"✅ 地址 {text_info['content']} 已假名化")
+                else:
+                    logger.warning(f"⚠️ 地址 {text_info['content']} 假名化失败")
+            
+            for i, text_info in enumerate(privacy_info.get("names", [])):
+                temp_path = f"{base_name}_temp_{i}.jpg"
+                
+                success = self._anonymize_text(
+                    current_path,
+                    text_info,
+                    temp_path
+                )
+                
+                if success:
+                    current_path = temp_path
+                    logger.info(f"✅ 姓名 {text_info['content']} 已假名化")
+                else:
+                    logger.warning(f"⚠️ 姓名 {text_info['content']} 假名化失败")
             
             # 重命名最终文件
             if current_path != screenshot_path:
@@ -93,7 +125,6 @@ class PrivacyProtector:
             logger.error(f"❌ 隐私保护处理失败: {e}")
             return screenshot_path
     
-
     
     def _parse_bounds(self, bounds_str: str) -> Optional[List[List[int]]]:
         """解析bounds字符串"""
@@ -165,6 +196,33 @@ class PrivacyProtector:
         
         logger.warning(f"⚠️ 无法清理手机号码: {phone_text}")
         return cleaned
+
+    def _anonymize_text(self, img_path: str, text_info: Dict, output_path: str) -> bool:
+        """对单个文本进行假名化"""
+        try:
+            text_region_box = text_info["bbox"]
+            text = text_info["content"]
+            replacement = text_info["replacement"]
+            
+            # 确保文本格式正确
+            if len(replacement) == 0:
+                logger.warning(f"⚠️ 文本格式异常: {text} (原文: {text})")
+                return False
+            
+            # 调用文本处理器
+            success = self.text_processor.process_text(
+                img_path=img_path,
+                text_region_box=text_region_box,
+                target_text=text,
+                replace_text=replacement,
+                output_path=output_path
+            )
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"❌ 文本假名化失败: {e}")
+            return False
     
     def _cleanup_temp_files(self, base_name: str):
         """清理临时文件"""

@@ -643,41 +643,83 @@ class TaskExecutor:
             self.history_steps.append(history_item)
             logger.debug(f"📝 历史步骤已记录: {history_item['description']} ({history_item['type']})") 
 
+    def _process_privacy_data(self, data_list: List[dict], data_type: str) -> List[dict]:
+        """处理隐私数据的通用方法"""
+        result = []
+        
+        for data_item in data_list:
+            # 解析bounds字符串
+            bounds_str = data_item.get("bounds", "")
+            bbox = self._parse_bounds_string(bounds_str)
+            
+            if bbox:
+                if data_type == "phone_numbers":
+                    info = {
+                        "display_number": data_item.get("phone_number", ""),
+                        "bbox": bbox
+                    }
+                elif data_type == "names":
+                    info = {
+                        "content": data_item.get("name", ""),
+                        "bbox": bbox,
+                        "replacement": data_item.get("replacement", "王某某")
+                    }
+                elif data_type == "addresses":
+                    info = {
+                        "content": data_item.get("address", ""),
+                        "bbox": bbox,
+                        "replacement": data_item.get("replacement", "北京市某某区某某街道")
+                    }
+                else:
+                    continue  # 未知类型，跳过
+                
+                result.append(info)
+        
+        return result
+
     def _process_privacy_from_ai_result(self, ai_result: dict, screenshot_path: str) -> dict:
         """基于AI分析结果处理隐私保护"""
         try:
             privacy_detection = ai_result.get("privacy_detection", {})
                        
-            # 检查是否有手机号数据
+            # 检查是否有隐私数据
             phone_numbers_data = privacy_detection.get("phone_numbers", [])
-            if not phone_numbers_data:
+            names_data = privacy_detection.get("names", [])
+            addresses_data = privacy_detection.get("addresses", [])
+            
+            # 如果没有任何隐私数据，直接返回
+            if not phone_numbers_data and not names_data and not addresses_data:
                 return {"protected_screenshot": screenshot_path}
             
-            # 转换AI检测结果为隐私保护器格式（简化版）
-            phone_numbers = []
-            for phone_data in phone_numbers_data:
-                # 解析bounds字符串
-                bounds_str = phone_data.get("bounds", "")
-                bbox = self._parse_bounds_string(bounds_str)
-                
-                if bbox:
-                    # 只使用必需的字段
-                    phone_info = {
-                        "display_number": phone_data.get("phone_number", ""),
-                        "bbox": bbox
-                    }
-                    phone_numbers.append(phone_info)
+            # 使用通用方法处理各类隐私数据
+            phone_numbers = self._process_privacy_data(phone_numbers_data, "phone_numbers")
+            names = self._process_privacy_data(names_data, "names")
+            addresses = self._process_privacy_data(addresses_data, "addresses")
             
-            if phone_numbers:
+            # 如果有任何隐私数据，进行处理
+            if phone_numbers or names or addresses:
                 # 构建简化的隐私信息
-                privacy_info = {
-                    "phone_numbers": phone_numbers
-                }
+                privacy_info = {}
+                if phone_numbers:
+                    privacy_info["phone_numbers"] = phone_numbers
+                if names:
+                    privacy_info["names"] = names
+                if addresses:
+                    privacy_info["addresses"] = addresses
                 
                 # 进行隐私保护处理
                 protected_path = self.privacy_protector.protect_screenshot(screenshot_path, privacy_info)
                 
-                logger.info(f"🔒 AI检测到隐私信息，已应用保护: {len(phone_numbers)} 个手机号")
+                # 统计信息
+                privacy_types = []
+                if phone_numbers:
+                    privacy_types.append(f"{len(phone_numbers)} 个手机号")
+                if names:
+                    privacy_types.append(f"{len(names)} 个姓名")
+                if addresses:
+                    privacy_types.append(f"{len(addresses)} 个地址")
+                
+                logger.info(f"🔒 AI检测到隐私信息，已应用保护: {', '.join(privacy_types)}")
                 return {"protected_screenshot": protected_path, "privacy_info": privacy_info}
             
             return {"protected_screenshot": screenshot_path}
