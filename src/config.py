@@ -140,32 +140,49 @@ class Config:
 3. completion_reason: 如果任务完成，说明完成的原因（中文）
 4. plan: 分析下一步应该执行的操作，包括：
    - description: 操作描述，必须按照以下格式规范：
-     * 桌面打开app："打开[app名称]"（如："打开淘宝"）- 使用Open操作而非Tap
-     * 搜索框操作："点击搜索框"
-     * 搜索按钮操作："点击搜索按钮"
+     * 桌面打开app："打开[app名称]"（如："打开淘宝"）- 使用Open操作
+     * 点击操作："点击搜索框"、"点击确认按钮"
+     * 长按操作："长按[元素名称]"
      * 滑动操作："向上滑动"、"向下滑动"、"向左滑动"、"向右滑动"、"向左滑动频道栏"、"向右滑动频道栏"
+     * 拖动操作："拖动进度条到80%"、"拖动[元素]到[位置]"
+     * 输入操作："输入用户名"、"输入搜索内容"
+     * 等待操作："等待广告结束"、"等待页面加载"
      * 其他操作：简洁明了的中文描述
-   - type: 操作类型（Open/Tap/Typing/Swipe/End等）
-   - position: 点击位置坐标（仅在Tap/Typing操作时需要，Open和Swipe操作不需要）
-   - box: 元素边界框（Tap/Typing/Swipe操作时需要，Open操作不需要）
-   - times: 点击次数（默认为1，仅在Tap操作时需要）
-   - text: 输入文本（仅在Typing操作时需要）
+   - type: 操作类型（Open/touch/long_touch/input/scroll/drag/wait/End等）
+   - position: 点击位置坐标（仅在touch/long_touch/input操作时需要）
+   - box: 元素边界框（touch/long_touch/input/scroll/drag操作时需要，Open和wait操作不需要）
+   - times: 点击次数（默认为1，仅在touch操作时需要）
+   - text: 输入文本（仅在input操作时需要）
    - app: 应用名称（仅在Open操作时需要）
    - package: 应用包名（仅在Open操作时需要，用于直接启动应用）
-   - start_position: 滑动起始位置坐标（仅在Swipe操作时需要）
-   - stop_position: 滑动结束位置坐标（仅在Swipe操作时需要）
-   - duration: 滑动持续时间，单位秒（仅在Swipe操作时需要，默认0.5）
+   - start_position: 滑动/拖动起始位置坐标（仅在scroll/drag操作时需要）
+   - stop_position: 滑动/拖动结束位置坐标（仅在scroll/drag操作时需要）
+   - duration: 滑动/拖动持续时间，单位秒（仅在scroll/drag操作时需要，默认0.5）
+   - wait_time: 等待时长，单位秒（仅在wait操作时需要）
+   - wait_reason: 等待原因（仅在wait操作时需要，如"广告播放"、"页面加载"等）
 
 操作类型说明：
 - Open: 打开应用（需要app和package字段，不需要position和box）
   * 当需要启动/打开手机应用时，优先使用Open操作
   * 适用于从桌面、应用列表等场景打开应用
   * 通过应用包名直接启动，更可靠更快速
-- Tap: 点击操作（需要position、box、times字段）
+- touch: 普通点击操作（需要position、box、times字段）
   * 用于点击界面元素，如按钮、链接、菜单项等
   * 不适用于打开应用，应优先使用Open操作
-- Typing: 输入文本（需要position、box、text字段）
-- Swipe: 滑动操作（需要start_position、stop_position、box、duration字段）
+- long_touch: 长按操作（需要position、box字段）
+  * 用于长按界面元素，触发右键菜单或特殊功能
+  * 长按时间默认为2秒
+- input: 输入文本（需要position、box、text字段）
+  * 用于在输入框中输入文本内容
+- scroll: 页面滑动操作（需要start_position、stop_position、box、duration字段）
+  * 用于页面或列表的滑动浏览
+  * 不需要精确的起始和结束位置要求
+- drag: 拖动操作（需要start_position、stop_position、box、duration字段）
+  * 用于拖动进度条、滑块等需要精确位置控制的元素
+  * 需要明确的起始和结束位置
+- wait: 等待操作（需要wait_time、wait_reason字段）
+  * 用于等待广告播放、页面加载等需要延时的场景
+  * 包含等待时长和等待原因说明
 - End: 任务完成
 
 **应用包名列表：**
@@ -183,44 +200,49 @@ class Config:
 - 任务要求打开美团外卖的"客服中心"，当成功跳转到相关页面后，即使页面XML中不包含"客服中心"字样，也应判断为任务完成
 - 判断任务完成应基于页面功能和上下文，而非仅依赖特定文本的出现
 
-**滑动操作判断指导：**
-1. **爱奇艺频道栏滑动：**
-   - 如果任务要求"打开电影"、"进入电影"、"查看电影"、"电影栏目"，但当前界面只显示"首页"、"电视剧"等少数频道，需要**向左滑动频道栏**查找电影频道
-   - 爱奇艺频道栏通常位于屏幕上方，包含"首页"、"电视剧"等标签，需要左右滑动来查看更多频道
+**滑动和拖动操作判断指导：**
+1. **scroll（页面滑动）场景：**
+   - 爱奇艺频道栏滑动：如果任务要求"打开电影"，但当前界面只显示"首页"、"电视剧"等少数频道，需要**向左scroll频道栏**查找电影频道
+   - 页面内容浏览：当界面内容需要滚动查看更多选项时
+   - 列表浏览：当搜索目标内容在当前界面不可见，但逻辑上应该存在时
 
-2. **其他滑动场景：**
-   - 当界面内容可能需要滚动查看更多选项时
-   - 当搜索目标内容在当前界面不可见，但逻辑上应该存在时
+2. **drag（拖动）场景：**
+   - 进度条调节：拖动视频播放进度条到指定位置
+   - 滑块控制：拖动音量滑块、亮度滑块等
+   - 元素移动：拖动界面元素到指定位置
 
-**滑动操作位置计算方法：**
-**重要**：滑动操作必须在目标框的中心点附近进行，确保滑动在正确的区域内！
+3. **wait（等待）场景：**
+   - 广告等待：检测到广告播放时需要等待广告结束
+   - 页面加载：页面正在加载时需要等待加载完成
+   - 网络请求：数据加载、搜索结果返回等需要等待
 
-1. **定位滑动区域**：首先从XML中找到可滑动的区域（通常是HorizontalScrollView或类似的容器）
-2. **滑动操作的起点**：不能和其他元素重叠，不能和页面边缘重叠
+**操作位置计算方法：**
+**重要**：滑动/拖动操作必须在目标框的中心点附近进行，确保操作在正确的区域内！
+
+1. **定位操作区域**：从XML中找到可操作的区域（HorizontalScrollView、ProgressBar、SeekBar等）
 2. **计算中心Y坐标**：使用区域的bounds="[x1,y1][x2,y2]"，计算Y中心 = (y1 + y2) / 2
 3. **计算中心X坐标**：计算X中心 = (x1 + x2) / 2
-4. **设置滑动起点**：start_position = [X中心 + 150, Y中心]  # 左右滑动
-5. **设置滑动终点**：stop_position = [X中心 - 150, Y中心]  # 左右滑动
-6. **上下滑动同理**：start_position = [X中心, Y中心 + 150]，stop_position = [X中心, Y中心 - 150]  # 上下滑动
-6. **设置滑动区域box**：完整的区域边界框
+4. **scroll操作位置设置**：
+   - 左右滑动：start_position = [X中心 + 150, Y中心]，stop_position = [X中心 - 150, Y中心]
+   - 上下滑动：start_position = [X中心, Y中心 + 150]，stop_position = [X中心, Y中心 - 150]
+5. **drag操作位置设置**：
+   - 根据拖动目标精确计算起始和结束位置
+   - 进度条：start_position为当前位置，stop_position为目标进度位置
 
 **示例计算：**
 - 如果频道栏bounds="[9,204][977,313]"
-- Y中心 = (204 + 313) / 2 = 258
-- start_position = [643, 258]  （493+150）
-- stop_position = [343, 258]   （493-150）
+- Y中心 = (204 + 313) / 2 = 258，X中心 = (9 + 977) / 2 = 493
+- scroll左滑：start_position = [643, 258]，stop_position = [343, 258]
 - box = [[9, 204], [977, 313]]
 
-**滑动操作格式：**
-- type: "Swipe"
-- start_position: [起始x, 中心y] (在滑动区域内，偏右位置)
-- stop_position: [结束x, 中心y] (在滑动区域内，偏左位置)
-- box: [[x1, y1], [x2, y2]] (滑动区域的完整边界框)
-- duration: 0.5 (滑动持续时间)
+**操作格式：**
+- scroll: type="scroll", start_position, stop_position, box, duration=0.5
+- drag: type="drag", start_position, stop_position, box, duration=0.5
+- wait: type="wait", wait_time, wait_reason
 
 **文本输入：**
-- 如果任务要求输入文本，需要先点击输入框，再输入文本
-- 如果页面中没有com.github.uiautomator的元素，说明当前页面并不可输入文字，需要先点击输入框，再输入文本
+- 如果任务要求输入文本，需要先用touch点击输入框激活，再使用input输入文本
+- 如果页面中没有com.github.uiautomator的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
 
 **重要提示：**
 - 打开应用优先使用Open操作（通过包名启动）
@@ -258,15 +280,18 @@ class Config:
     }},
     "plan": {{
         "description": "操作描述",
-        "type": "操作类型",
+        "type": "操作类型(Open/touch/long_touch/input/scroll/drag/wait/End)",
         "position": [x, y],
         "box": [[x1, y1], [x2, y2]],
-        "text": "输入文本（如需要）",
-        "app": "应用名称（如需要）",
-        "package": "应用包名（如需要）",
+        "times": 1,
+        "text": "输入文本（input操作时需要）",
+        "app": "应用名称（Open操作时需要）",
+        "package": "应用包名（Open操作时需要）",
         "start_position": [x, y],
         "stop_position": [x, y],
-        "duration": 0.5
+        "duration": 0.5,
+        "wait_time": 3,
+        "wait_reason": "等待原因（wait操作时需要）"
     }}
 }}"""
     

@@ -155,6 +155,25 @@ class DeviceController:
             logger.error(f"❌ 点击操作失败: {e}")
             return False
     
+    def long_click(self, x: int, y: int, duration: float = 2.0) -> bool:
+        """长按指定坐标"""
+        try:
+            # 验证坐标是否在屏幕范围内
+            width, height = self.screen_size if self.screen_size else (1080, 2400)
+            
+            if 0 <= x <= width and 0 <= y <= height:
+                logger.info(f"👆 长按位置: ({x}, {y}), 持续时间: {duration}秒")
+                self.device.long_click(x, y, duration)
+                time.sleep(2)  # 等待界面响应
+                return True
+            else:
+                logger.error(f"❌ 坐标超出屏幕范围: ({x}, {y}) vs ({width}x{height})")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ 长按操作失败: {e}")
+            return False
+    
     def input_text(self, text: str) -> bool:
         """输入文本"""
         try:

@@ -185,13 +185,21 @@ class TaskExecutor:
                 self._handle_task_completion(ai_result, step, final_screenshot_path, xml_path)
                 return True
             
-            # 6. 生成标记图片（Open操作不需要标记）
+            # 6. 生成标记图片（某些操作不需要标记）
             label_path = None
             plan = ai_result.get("plan", {})
             action_type = plan.get("type", "").lower()
             
-            # Open操作不生成标记，其他操作生成标记
-            if action_type != "open":
+            # 兼容旧操作类型名称
+            if action_type == "tap":
+                action_type = "touch"
+            elif action_type == "typing":
+                action_type = "input"
+            elif action_type == "swipe":
+                action_type = "scroll"
+            
+            # Open和wait操作不生成标记，其他操作生成标记
+            if action_type not in ["open", "wait", "end"]:
                 label_path = self._generate_labeled_image(ai_result, step, final_screenshot_path)
             
             # 7. 保存步骤数据
@@ -403,8 +411,8 @@ class TaskExecutor:
             # if "package" in plan and plan["package"]:
             #     cleaned_plan["package"] = plan["package"]
         
-        elif action_type == "tap":
-            # Tap操作需要box、times、position字段
+        elif action_type in ["tap", "touch"]:
+            # touch操作需要box、times、position字段
             if "box" in plan:
                 cleaned_plan["box"] = plan["box"]
             if "times" in plan:
@@ -415,8 +423,15 @@ class TaskExecutor:
             if "position" in plan:
                 cleaned_plan["position"] = plan["position"]
         
-        elif action_type == "typing":
-            # Typing操作需要box、text、position字段
+        elif action_type == "long_touch":
+            # long_touch操作需要box、position字段
+            if "box" in plan:
+                cleaned_plan["box"] = plan["box"]
+            if "position" in plan:
+                cleaned_plan["position"] = plan["position"]
+        
+        elif action_type in ["typing", "input"]:
+            # input操作需要box、text、position字段
             if "box" in plan:
                 cleaned_plan["box"] = plan["box"]
             if "text" in plan and plan["text"]:
@@ -424,8 +439,8 @@ class TaskExecutor:
             if "position" in plan:
                 cleaned_plan["position"] = plan["position"]
         
-        elif action_type == "swipe":
-            # Swipe操作需要start_position、stop_position、box、duration字段
+        elif action_type in ["swipe", "scroll", "drag"]:
+            # scroll/drag操作需要start_position、stop_position、box、duration字段
             if "box" in plan:
                 cleaned_plan["box"] = plan["box"]
             if "start_position" in plan:
@@ -442,6 +457,17 @@ class TaskExecutor:
             else:
                 cleaned_plan["duration"] = 0.5  # 默认滑动时间
         
+        elif action_type == "wait":
+            # wait操作需要wait_time、wait_reason字段
+            if "wait_time" in plan:
+                cleaned_plan["wait_time"] = plan["wait_time"]
+            else:
+                cleaned_plan["wait_time"] = 3  # 默认等待时间
+            if "wait_reason" in plan:
+                cleaned_plan["wait_reason"] = plan["wait_reason"]
+            else:
+                cleaned_plan["wait_reason"] = "页面处理"
+        
         elif action_type == "end":
             # End操作只需要description和type
             pass
@@ -452,14 +478,36 @@ class TaskExecutor:
         """执行操作"""
         action_type = plan.get("type", "").lower()
         
-        if action_type == "tap" and "position" in plan:
-            x, y = int(plan["position"][0]), int(plan["position"][1])
-            return self.device.click(x, y)
-            
-        elif action_type == "typing" and "text" in plan:
-            return self.device.input_text(plan["text"])
-        
+        # 兼容旧的操作类型名称
+        if action_type == "tap":
+            action_type = "touch"
+        elif action_type == "typing":
+            action_type = "input"
         elif action_type == "swipe":
+            action_type = "scroll"
+        
+        if action_type == "touch" and "position" in plan:
+            x, y = int(plan["position"][0]), int(plan["position"][1])
+            times = plan.get("times", 1)
+            logger.info(f"👆 执行点击: ({x}, {y}), 次数: {times}")
+            for i in range(times):
+                if not self.device.click(x, y):
+                    return False
+                if times > 1 and i < times - 1:
+                    time.sleep(0.5)  # 多次点击间隔
+            return True
+            
+        elif action_type == "long_touch" and "position" in plan:
+            x, y = int(plan["position"][0]), int(plan["position"][1])
+            logger.info(f"👆 执行长按: ({x}, {y})")
+            return self.device.long_click(x, y)
+            
+        elif action_type == "input" and "text" in plan:
+            text = plan["text"]
+            logger.info(f"⌨️ 执行输入: {text}")
+            return self.device.input_text(text)
+        
+        elif action_type in ["scroll", "drag"]:
             # 优先使用新格式字段
             start_pos = plan.get("start_position") or plan.get("swipe_start")
             stop_pos = plan.get("stop_position") or plan.get("swipe_end")
@@ -468,10 +516,31 @@ class TaskExecutor:
                 fx, fy = int(start_pos[0]), int(start_pos[1])
                 tx, ty = int(stop_pos[0]), int(stop_pos[1])
                 duration = plan.get("duration", 0.5)
+                
+                if action_type == "scroll":
+                    logger.info(f"📜 执行滑动: ({fx}, {fy}) -> ({tx}, {ty})")
+                else:  # drag
+                    logger.info(f"🖱️ 执行拖动: ({fx}, {fy}) -> ({tx}, {ty})")
+                
                 return self.device.swipe(fx, fy, tx, ty, duration)
             else:
-                logger.error(f"❌ Swipe操作缺少必要参数: start_position={start_pos}, stop_position={stop_pos}")
+                logger.error(f"❌ {action_type}操作缺少必要参数: start_position={start_pos}, stop_position={stop_pos}")
                 return False
+        
+        elif action_type == "wait":
+            wait_time = plan.get("wait_time", 3)
+            wait_reason = plan.get("wait_reason", "页面处理")
+            logger.info(f"⏰ 执行等待: {wait_reason}, 时长: {wait_time}秒")
+            
+            # 可中断的等待
+            for i in range(int(wait_time * 10)):  # 每0.1秒检查一次中断
+                if self.is_interrupted:
+                    logger.info(f"🛑 等待过程中检测到中断请求")
+                    return False
+                time.sleep(0.1)
+            
+            logger.info(f"✅ 等待完成: {wait_reason}")
+            return True
             
         elif action_type == "open" and "app" in plan:
             app_name = plan["app"]
