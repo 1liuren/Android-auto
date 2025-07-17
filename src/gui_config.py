@@ -20,8 +20,12 @@ class GUIConfig:
         self.config_file = config_file
         self.default_config = {
             "output_dir": "output",
+            "batch_output_dir": "batch_output",
             "api_key": "",
+            "model_name": "deepseek-r1",
             "max_execution_times": 50,
+            "privacy_enabled": True,
+            "multimodal_enabled": False,
             "device_id": "auto",
             "excel_file": "验收通过数据/标贝采集需求.xlsx",
             "selected_sheets": ["爱奇艺", "懂车帝", "美团外卖", "饿了么"],

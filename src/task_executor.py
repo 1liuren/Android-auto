@@ -270,7 +270,7 @@ class TaskExecutor:
             logger.warning(f"⚠️ 检测页面加载状态失败: {e}")
             return False
     
-    def _wait_for_page_load(self, step: int, max_retries: int = 4) -> tuple:
+    def _wait_for_page_load(self, step: int, max_retries: int = 3) -> tuple:
         """等待页面加载完成，返回最终的截图和XML路径"""
         for retry in range(max_retries):
             screenshot_path, xml_path = self._capture_screen_state(step)

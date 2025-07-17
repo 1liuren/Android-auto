@@ -32,13 +32,20 @@ class AIAnalyzer:
         with open(xml_path, "r", encoding="utf-8") as f:
             xml_content = f.read()
         
-        # 如果提供了截图，使用多模态增强
+        # 如果提供了截图且启用了多模态增强，使用多模态增强
         enhanced_content = xml_content
-        if screenshot_path and os.path.exists(screenshot_path):
+        if (screenshot_path and os.path.exists(screenshot_path) and 
+            config.multimodal_enhancement.get("enabled", False)):
             try:
                 enhanced_content = self._enhance_with_qwenvl_html(xml_content, screenshot_path)
+                if config.multimodal_enhancement.get("debug_mode", False):
+                    logger.info("🔍 多模态增强成功")
             except Exception as e:
-                logger.warning(f"多模态增强失败，使用原始XML: {e}")
+                if config.multimodal_enhancement.get("fallback_to_xml", True):
+                    logger.warning(f"多模态增强失败，回退到原始XML: {e}")
+                else:
+                    logger.error(f"多模态增强失败: {e}")
+                    raise
         
         # 构建提示词
         user_prompt = self._build_prompt(query, enhanced_content, current_step, history_steps)
@@ -61,10 +68,11 @@ class AIAnalyzer:
                     **config.model_params
                 )
                 
-                if config.model_name in ['qwen-max', 'qwen-plus']:
+                if config.model_name in ['qwen-max', 'qwen-plus', 'qwen-plus-latest', 'qwen-max-latest']:
                     result = response.output.text
                 else:
                     result = response.output.choices[0].message.content
+                # result = response.output.choices[0].message.content
                 logger.info(f"🤖 AI原始响应长度: {len(result)} 字符")
                 break
             except Exception as e:

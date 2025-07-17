@@ -102,21 +102,60 @@ class ConfigPanel:
     
     def _create_ai_settings(self):
         """创建AI模型设置区域"""
-        ai_frame = tk.LabelFrame(self.frame, text="AI模型设置", 
+        ai_frame = tk.LabelFrame(self.frame, text="🤖 AI模型设置", 
                                  bg="#FFFFFF", fg="#333333", 
                                  font=("Arial", 10, "bold"), padx=10, pady=10)
         ai_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         ai_frame.columnconfigure(1, weight=1)
         
+        # API Key设置
         ttk.Label(ai_frame, text="API Key:").grid(row=0, column=0, sticky="w")
         self.gui_app.api_key_var = tk.StringVar()
         api_entry = ttk.Entry(ai_frame, textvariable=self.gui_app.api_key_var, show="*")
         api_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=(0, 5))
         
-        ttk.Label(ai_frame, text="最大执行次数:").grid(row=1, column=0, sticky="w")
+        # 模型选择
+        ttk.Label(ai_frame, text="AI模型:").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        self.gui_app.model_name_var = tk.StringVar()
+        model_combo = ttk.Combobox(
+            ai_frame, 
+            textvariable=self.gui_app.model_name_var,
+            values=["deepseek-r1", "qwen-plus-latest", "qwen-max-latest"],
+            state="readonly",
+            width=20
+        )
+        model_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(5, 5))
+        model_combo.set("deepseek-r1")  # 设置默认值
+        
+        # 最大执行次数
+        ttk.Label(ai_frame, text="最大执行次数:").grid(row=2, column=0, sticky="w", pady=(5, 0))
         self.gui_app.max_steps_var = tk.StringVar()
         max_steps_entry = ttk.Entry(ai_frame, textvariable=self.gui_app.max_steps_var, width=10)
-        max_steps_entry.grid(row=1, column=1, sticky="w", padx=(10, 0))
+        max_steps_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(5, 10))
+        
+        # 多模态增强设置
+        multimodal_frame = tk.Frame(ai_frame, bg="#FFFFFF")
+        multimodal_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        multimodal_frame.columnconfigure(0, weight=1)
+        
+        self.gui_app.multimodal_enabled_var = tk.BooleanVar(value=False)
+        multimodal_check = ttk.Checkbutton(
+            multimodal_frame, 
+            text="🔍 启用多模态增强 (图像+文本分析)",
+            variable=self.gui_app.multimodal_enabled_var,
+            style="Config.TCheckbutton"
+        )
+        multimodal_check.grid(row=0, column=0, sticky="w", pady=(0, 5))
+        
+        # 多模态增强说明
+        multimodal_info = ttk.Label(
+            multimodal_frame,
+            text="💡 多模态增强将结合截图和XML信息进行更精确的分析",
+            font=("Arial", 8),
+            foreground="#666666",
+            justify="left"
+        )
+        multimodal_info.grid(row=1, column=0, sticky="w")
         
         # 初始化设备ID变量
         self.gui_app.device_id_var = tk.StringVar()

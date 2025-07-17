@@ -18,7 +18,7 @@ class Config:
         self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
         
         # 模型配置  qwen-max、deepseek-r1、qwen-plus
-        self.model_name = "deepseek-r1"  # 默认模型
+        self.model_name = "qwen-max-latest"  # 默认模型
         
         # 模型参数配置
         self.model_params = {
@@ -27,6 +27,13 @@ class Config:
             "top_p": 0.8,
             "top_k": 50,
             "enable_thinking": False
+        }
+        
+        # 多模态增强配置
+        self.multimodal_enhancement = {
+            "enabled": False,  # 是否启用多模态增强
+            "fallback_to_xml": True,  # 增强失败时是否回退到XML
+            "debug_mode": False  # 多模态调试模式
         }
         
         # 设备配置

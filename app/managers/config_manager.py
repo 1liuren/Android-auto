@@ -35,8 +35,10 @@ class ConfigManager:
             self.gui_app.output_dir_var.set(gui_config.get("output_dir", "output"))
             self.gui_app.batch_output_dir_var.set(gui_config.get("batch_output_dir", "batch_output"))
             self.gui_app.api_key_var.set(gui_config.get("api_key", config.dashscope_api_key or ""))
+            self.gui_app.model_name_var.set(gui_config.get("model_name", config.model_name))
             self.gui_app.max_steps_var.set(str(gui_config.get("max_execution_times", config.max_execution_times)))
             self.gui_app.privacy_enabled_var.set(gui_config.get("privacy_enabled", config.privacy_protection.get("enabled", True)))
+            self.gui_app.multimodal_enabled_var.set(gui_config.get("multimodal_enabled", config.multimodal_enhancement.get("enabled", False)))
             self.gui_app.device_id_var.set(gui_config.get("device_id", ""))
             self.gui_app.excel_path_var.set(gui_config.get("excel_file", "验收通过数据/标贝采集需求.xlsx"))
             
@@ -72,8 +74,10 @@ class ConfigManager:
                 "output_dir": self.gui_app.output_dir_var.get(),
                 "batch_output_dir": self.gui_app.batch_output_dir_var.get(),
                 "api_key": self.gui_app.api_key_var.get(),
+                "model_name": self.gui_app.model_name_var.get(),
                 "max_execution_times": int(self.gui_app.max_steps_var.get() or 50),
                 "privacy_enabled": self.gui_app.privacy_enabled_var.get(),
+                "multimodal_enabled": self.gui_app.multimodal_enabled_var.get(),
                 "device_id": self.gui_app.device_id_var.get(),
                 "excel_file": self.gui_app.excel_path_var.get(),
                 "selected_sheets": [sheet for sheet, var in self.gui_app.sheet_vars.items() if var.get()],
@@ -88,8 +92,10 @@ class ConfigManager:
             
             # 同时更新系统config对象
             config.dashscope_api_key = self.gui_app.api_key_var.get()
+            config.model_name = self.gui_app.model_name_var.get()
             config.max_execution_times = int(self.gui_app.max_steps_var.get() or 50)
             config.device_id = self.gui_app.device_id_var.get()
+            config.multimodal_enhancement["enabled"] = self.gui_app.multimodal_enabled_var.get()
             
             # 更新系统config的应用包名映射
             config.app_packages.update(self.gui_app.app_packages)
@@ -196,7 +202,10 @@ class ConfigManager:
             # 更新GUI组件
             self.gui_app.output_dir_var.set(imported_config.get("output_dir", "output"))
             self.gui_app.api_key_var.set(imported_config.get("api_key", ""))
+            self.gui_app.model_name_var.set(imported_config.get("model_name", "deepseek-r1"))
             self.gui_app.max_steps_var.set(str(imported_config.get("max_execution_times", 50)))
+            self.gui_app.privacy_enabled_var.set(imported_config.get("privacy_enabled", True))
+            self.gui_app.multimodal_enabled_var.set(imported_config.get("multimodal_enabled", False))
             self.gui_app.device_id_var.set(imported_config.get("device_id", ""))
             self.gui_app.excel_path_var.set(imported_config.get("excel_file", ""))
             self.gui_app.column_var.set(imported_config.get("target_column", "示例query"))

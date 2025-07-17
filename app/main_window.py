@@ -106,8 +106,10 @@ class PhoneAutomationMainWindow:
         self.output_dir_var = None
         self.batch_output_dir_var = None
         self.api_key_var = None
+        self.model_name_var = None
         self.max_steps_var = None
         self.privacy_enabled_var = None
+        self.multimodal_enabled_var = None
         self.excel_path_var = None
         
         # 统一日志系统

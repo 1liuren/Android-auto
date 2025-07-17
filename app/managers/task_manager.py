@@ -83,6 +83,11 @@ class TaskManager:
                 self.logger.warning("⚠️ 前端未配置API Key")
             
             # 同步其他配置
+            model_name = self.gui_app.model_name_var.get()
+            if model_name:
+                config.model_name = model_name
+                self.logger.info(f"🤖 AI模型已设置为: {model_name}")
+            
             max_steps = self.gui_app.max_steps_var.get()
             if max_steps:
                 config.max_execution_times = int(max_steps)
@@ -90,6 +95,11 @@ class TaskManager:
             device_id = self.gui_app.device_id_var.get()
             if device_id:
                 config.device_id = device_id
+            
+            # 同步多模态增强设置
+            multimodal_enabled = self.gui_app.multimodal_enabled_var.get()
+            config.multimodal_enhancement["enabled"] = multimodal_enabled
+            self.logger.info(f"🔍 多模态增强已设置为: {'启用' if multimodal_enabled else '禁用'}")
             
             # 创建任务执行器
             output_dir = self.gui_app.output_dir_var.get() or "output"
@@ -223,6 +233,11 @@ class TaskManager:
                 self.logger.warning("⚠️ 前端未配置API Key")
                 
             # 同步其他配置
+            model_name = self.gui_app.model_name_var.get()
+            if model_name:
+                config.model_name = model_name
+                self.logger.info(f"🤖 AI模型已设置为: {model_name}")
+            
             max_steps = self.gui_app.max_steps_var.get()
             if max_steps:
                 config.max_execution_times = int(max_steps)
@@ -230,6 +245,11 @@ class TaskManager:
             device_id = self.gui_app.device_id_var.get()
             if device_id:
                 config.device_id = device_id
+            
+            # 同步多模态增强设置
+            multimodal_enabled = self.gui_app.multimodal_enabled_var.get()
+            config.multimodal_enhancement["enabled"] = multimodal_enabled
+            self.logger.info(f"🔍 多模态增强已设置为: {'启用' if multimodal_enabled else '禁用'}")
                 
             # 设置输出目录 - 直接使用batch_output作为根目录
             batch_output_base = self.gui_app.batch_output_dir_var.get() or "batch_output"
