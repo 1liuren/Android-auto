@@ -148,6 +148,7 @@ class PrivacyProtector:
         try:
             phone_region_box = phone_info["bbox"]
             display_number = phone_info["display_number"]
+            replacement = phone_info["replacement"]
             
             # 使用正则表达式清理手机号码
             target_phone = self._clean_phone_with_regex(display_number)
@@ -164,6 +165,13 @@ class PrivacyProtector:
                 target_phone_number=target_phone,
                 output_path=output_path
             )
+            # success = self.text_processor.process_text(
+            #     img_path=img_path,
+            #     text_region_box=phone_region_box,
+            #     target_text=target_phone,
+            #     replace_text=replacement,
+            #     output_path=output_path
+            # )
             
             return success
             

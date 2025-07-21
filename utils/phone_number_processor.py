@@ -31,7 +31,7 @@ class PhoneNumberProcessor:
         """
         self.debug_mode = debug_mode
         self.min_area = 50  # 最小轮廓面积阈值 
-        self.max_aspect_ratio = 2.5  # 最大长宽比
+        self.max_aspect_ratio = 5  # 最大长宽比
         self.merge_distance = 2  # 轮廓合并距离阈值
         # 添加历史记录功能
         self.phone_replacement_history = {}  # 格式: {target_phone: swap_info}
@@ -280,11 +280,32 @@ class PhoneNumberProcessor:
         x_offset_left = (big_w - small_w) // 2
         x_offset_right = (big_w - small_w) - x_offset_left
         
-        small_y_top = max(0, small_y - y_offset_top)
-        small_y_bottom = min(img.shape[0], small_y + y_offset_bottom + small_h)
-        small_x_left = max(0, small_x - x_offset_left)
-        small_x_right = min(img.shape[1], small_x + x_offset_right + small_w)
-        
+        # 计算扩展后的小box区域，并确保不会越界导致尺寸不匹配
+        img_h, img_w = img.shape[:2]
+        small_y_top = small_y - y_offset_top
+        small_y_bottom = small_y + y_offset_bottom + small_h
+        small_x_left = small_x - x_offset_left
+        small_x_right = small_x + x_offset_right + small_w
+
+        # 修正越界，保证区域大小不变
+        # 纵向
+        if small_y_top < 0:
+            shift = -small_y_top
+            small_y_top = 0
+            small_y_bottom = min(img_h, small_y_bottom + shift)
+        if small_y_bottom > img_h:
+            shift = small_y_bottom - img_h
+            small_y_bottom = img_h
+            small_y_top = max(0, small_y_top - shift)
+        # 横向
+        if small_x_left < 0:
+            shift = -small_x_left
+            small_x_left = 0
+            small_x_right = min(img_w, small_x_right + shift)
+        if small_x_right > img_w:
+            shift = small_x_right - img_w
+            small_x_right = img_w
+            small_x_left = max(0, small_x_left - shift)
         # 提取两个区域
         roi1 = img[small_y_top:small_y_bottom, small_x_left:small_x_right].copy()
         roi2 = img[big_y:big_y+big_h, big_x:big_x+big_w].copy()
@@ -292,23 +313,23 @@ class PhoneNumberProcessor:
         # 修复：确保尺寸匹配后再交换
         result_img = img.copy()
         
-        # 将roi1调整到big区域的尺寸
-        if roi1.shape[:2] != (big_h, big_w):
-            roi1_resized = cv2.resize(roi1, (big_w, big_h))
-        else:
-            roi1_resized = roi1
+        # # 将roi1调整到big区域的尺寸
+        # if roi1.shape[:2] != (big_h, big_w):
+        #     roi1_resized = cv2.resize(roi1, (big_w, big_h))
+        # else:
+        #     roi1_resized = roi1
         
-        # 将roi2调整到small扩展区域的尺寸
-        target_h = small_y_bottom - small_y_top
-        target_w = small_x_right - small_x_left
-        if roi2.shape[:2] != (target_h, target_w):
-            roi2_resized = cv2.resize(roi2, (target_w, target_h))
-        else:
-            roi2_resized = roi2
+        # # 将roi2调整到small扩展区域的尺寸
+        # target_h = small_y_bottom - small_y_top
+        # target_w = small_x_right - small_x_left
+        # if roi2.shape[:2] != (target_h, target_w):
+        #     roi2_resized = cv2.resize(roi2, (target_w, target_h))
+        # else:
+        #     roi2_resized = roi2
         
         # 执行交换
-        result_img[big_y:big_y+big_h, big_x:big_x+big_w] = roi1_resized
-        result_img[small_y_top:small_y_bottom, small_x_left:small_x_right] = roi2_resized
+        result_img[big_y:big_y+big_h, big_x:big_x+big_w] = roi1
+        result_img[small_y_top:small_y_bottom, small_x_left:small_x_right] = roi2
         
         return result_img, swap_info
 

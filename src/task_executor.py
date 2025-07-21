@@ -657,19 +657,20 @@ class TaskExecutor:
                 if data_type == "phone_numbers":
                     info = {
                         "display_number": data_item.get("phone_number", ""),
-                        "bbox": bbox
+                        "bbox": bbox,
+                        "replacement": data_item.get("replacement", "13800138000")
                     }
                 elif data_type == "names":
                     info = {
                         "content": data_item.get("name", ""),
                         "bbox": bbox,
-                        "replacement": data_item.get("replacement", "王某某")
+                        "replacement": data_item.get("replacement", "王一一")
                     }
                 elif data_type == "addresses":
                     info = {
                         "content": data_item.get("address", ""),
                         "bbox": bbox,
-                        "replacement": data_item.get("replacement", "北京市某某区某某街道")
+                        "replacement": data_item.get("replacement", "北京市海淀区山河园街道")
                     }
                 else:
                     continue  # 未知类型，跳过
