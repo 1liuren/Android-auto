@@ -441,10 +441,18 @@ class TaskManager:
             # 如果有任务执行器，调用其中断方法
             if self.task_executor:
                 try:
+                    # 中断任务
                     self.task_executor.interrupt_task()
                     self.logger.warning("🛑 已向任务执行器发送中断信号")
+                    
+                    # # 清理应用和保存状态
+                    # self.logger.info("🧹 正在清理应用...")
+                    # self.task_executor.device.clean_apps()
+                    # self.task_executor.save_interrupted_task()
+                    # self.logger.info("💾 中断状态已保存")
+                    
                 except Exception as e:
-                    self.logger.warning(f"⚠️ 中断任务执行器时出错: {e}")
+                    self.logger.warning(f"⚠️ 中断或清理任务时出错: {e}")
             
             self.gui_app._update_status("🛑 正在取消...", "orange")
             return True

@@ -28,17 +28,29 @@ REM 创建打包命令
 pyinstaller ^
     --onefile ^
     --windowed ^
-    --name="手机自动化工具" ^
+    --name="phone-agent工具" ^
     --add-data="app;app" ^
     --add-data="src;src" ^
     --add-data="utils;utils" ^
     --add-data="requirements.txt;." ^
     --collect-data="uiautomator2" ^
-    --collect-data="adbutils" ^
-    --collect-data="cv2" ^
     --exclude-module="matplotlib" ^
-    --exclude-module="scipy" ^
     --exclude-module="PIL.ImageQt" ^
+    --exclude-module="IPython" ^
+    --exclude-module="jupyter" ^
+    --exclude-module="notebook" ^
+    --exclude-module="pytest" ^
+    --exclude-module="pkg_resources" ^
+    --exclude-module="wheel" ^
+    --exclude-module="pip" ^
+    --exclude-module="torch" ^
+    --exclude-module="torchvision" ^
+    --exclude-module="torchaudio" ^
+    --exclude-module="sympy" ^
+    --exclude-module="pyarrow" ^
+    --exclude-module="botocore" ^
+    --exclude-module="boto3" ^
+    --exclude-module="tensorboard" ^
     --hidden-import="tkinter" ^
     --hidden-import="tkinter.ttk" ^
     --hidden-import="tkinter.filedialog" ^
@@ -50,26 +62,11 @@ pyinstaller ^
     --hidden-import="openpyxl" ^
     --hidden-import="requests" ^
     --hidden-import="uiautomator2" ^
-    --hidden-import="ttkthemes" ^
-    --hidden-import="src.gui_config" ^
-    --hidden-import="json" ^
-    --hidden-import="datetime" ^
-    --hidden-import="numpy.core" ^
-    --hidden-import="numpy.core._methods" ^
-    --hidden-import="numpy.lib.format" ^
-    --hidden-import="loguru" ^
-    --hidden-import="loguru._logger" ^
-    --hidden-import="loguru._handler" ^
-    --hidden-import="sys" ^
-    --hidden-import="os" ^
-    --hidden-import="tempfile" ^
-    --hidden-import="io" ^
-    --hidden-import="uiautomator2" ^
     --hidden-import="uiautomator2.exceptions" ^
     --hidden-import="uiautomator2.session" ^
-    --hidden-import="socket" ^
-    --hidden-import="subprocess" ^
-    --hidden-import="zipfile" ^
+    --hidden-import="ttkthemes" ^
+    --hidden-import="src.gui_config" ^
+    --hidden-import="loguru" ^
     --hidden-import="adbutils" ^
     --hidden-import="cv2" ^
     --hidden-import="lxml" ^
@@ -78,6 +75,10 @@ pyinstaller ^
     --hidden-import="PIL" ^
     --hidden-import="PIL.Image" ^
     --hidden-import="dashscope" ^
+    --hidden-import="scipy" ^
+    --hidden-import="scipy.stats" ^
+    --hidden-import="jaraco" ^
+    --hidden-import="jaraco.text" ^
     gui_app_new.py
 
 if errorlevel 1 (
@@ -91,16 +92,16 @@ echo.
 echo 🎉 打包成功！
 echo.
 echo 📁 生成的文件位置：
-echo    dist\手机自动化工具.exe
+echo    dist\phone-agent工具.exe
 echo.
 echo 📊 文件信息：
-if exist "dist\手机自动化工具.exe" (
-    for %%I in ("dist\手机自动化工具.exe") do echo    文件大小: %%~zI 字节 ^(~%%~zI/1024/1024 MB^)
+if exist "dist\phone-agent工具.exe" (
+    for %%I in ("dist\phone-agent工具.exe") do echo    文件大小: %%~zI 字节 ^(~%%~zI/1024/1024 MB^)
 )
 
 echo.
 echo 💡 使用说明：
-echo    1. 可以直接运行 dist\手机自动化工具.exe
+echo    1. 可以直接运行 dist\phone-agent工具.exe
 echo    2. 该文件包含所有依赖，无需Python环境
 echo    3. 可以复制到其他Windows电脑运行
 echo.
@@ -112,4 +113,4 @@ if /i "%choice%"=="y" (
 
 echo.
 echo 🎊 操作完成！
-pause 
+pause

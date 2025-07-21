@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 class BatchExecutor:
     """批量任务执行器 - 专门处理示例query"""
     
+    
     def __init__(self, task_output_base_dir="output"):
         self.excel_file = "验收通过数据/标贝采集需求.xlsx"
         self.target_sheets = ['爱奇艺', '懂车帝', '美团外卖', '饿了么']

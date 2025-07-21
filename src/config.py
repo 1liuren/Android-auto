@@ -60,7 +60,7 @@ class Config:
             "enabled": True,  # 是否启用隐私保护
             "auto_detect": True,  # 是否自动检测隐私敏感信息
             "phone_anonymization": True,  # 是否启用手机号假名化
-            "debug_mode": True,  # 隐私处理调试模式
+            "debug_mode": False,  # 隐私处理调试模式
             "temp_file_cleanup": True,  # 是否自动清理临时文件
             "protection_keywords": [  # 隐私敏感关键词
                 '手机号', '电话', '联系方式', '个人信息', 
@@ -265,7 +265,6 @@ class Config:
    - 手机号码：不做替换，仅检测并输出原始文本和bounds。
    - 姓名：生成可替换的虚假姓名，要求姓氏保持不变，名字部分用与原名长度一致的随机常见汉字替换，保证姓名结构合理。
    - 地址：省、市、区级别（如“北京市海淀区”）无需替换，街道、居住地等具体信息（如“中关村东升科技园A栋4单元”）需要用与原文字长度一致的合理伪造文本替换，伪造内容应为真实存在的街道、园区、楼栋等名称，保持格式和长度一致。
-
 3. **隐私检测输出：**
    - 如果检测到隐私信息，在返回结果中包含privacy_detection字段，结构如下：
      - phone_numbers: 手机号原始文本和bounds

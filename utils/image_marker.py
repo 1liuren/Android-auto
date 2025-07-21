@@ -131,9 +131,9 @@ class ImageMarker:
         if operation_type == "touch":
             # 普通点击：十字中心线
             draw.line([center_x - line_length, center_y, center_x + line_length, center_y], 
-                     fill=color, width=2)
+                        fill=color, width=2)
             draw.line([center_x, center_y - line_length, center_x, center_y + line_length], 
-                     fill=color, width=2)
+                        fill=color, width=2)
         elif operation_type == "long_touch":
             # 长按：双重圆圈
             outer_size = point_size + 6

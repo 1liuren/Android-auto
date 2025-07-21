@@ -145,7 +145,7 @@ class DeviceController:
             if 0 <= x <= width and 0 <= y <= height:
                 logger.info(f"🎯 点击位置: ({x}, {y})")
                 self.device.click(x, y)
-                time.sleep(4)  # 等待界面响应
+                time.sleep(2)  # 等待界面响应
                 return True
             else:
                 logger.error(f"❌ 坐标超出屏幕范围: ({x}, {y}) vs ({width}x{height})")
@@ -164,7 +164,7 @@ class DeviceController:
             if 0 <= x <= width and 0 <= y <= height:
                 logger.info(f"👆 长按位置: ({x}, {y}), 持续时间: {duration}秒")
                 self.device.long_click(x, y, duration)
-                time.sleep(2)  # 等待界面响应
+                time.sleep(1)  # 等待界面响应
                 return True
             else:
                 logger.error(f"❌ 坐标超出屏幕范围: ({x}, {y}) vs ({width}x{height})")

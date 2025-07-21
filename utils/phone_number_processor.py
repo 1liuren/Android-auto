@@ -30,9 +30,11 @@ class PhoneNumberProcessor:
             debug_mode: 是否启用调试模式（保存中间处理步骤）
         """
         self.debug_mode = debug_mode
-        self.min_area = 100  # 最小轮廓面积阈值
-        self.max_aspect_ratio = 5  # 最大长宽比
-        self.merge_distance = 10  # 轮廓合并距离阈值
+        self.min_area = 50  # 最小轮廓面积阈值 
+        self.max_aspect_ratio = 2.5  # 最大长宽比
+        self.merge_distance = 2  # 轮廓合并距离阈值
+        # 添加历史记录功能
+        self.phone_replacement_history = {}  # 格式: {target_phone: swap_info}
         
     def process_phone_number(self, 
                             img_path: str,
@@ -43,7 +45,7 @@ class PhoneNumberProcessor:
         处理电话号码的主函数
         
         Args:
-            original_image: 原始图像
+            img_path: 图像路径
             phone_region_box: 电话号码区域边界框 [[x1,y1], [x2,y2]]
             target_phone_number: 目标电话号码字符串
             output_path: 输出图像路径
@@ -51,6 +53,12 @@ class PhoneNumberProcessor:
         Returns:
             bool: 是否处理成功
         """
+        # 检查历史记录
+        if target_phone_number in self.phone_replacement_history:
+            print(f"使用历史手机号记录: {target_phone_number} -> {self.phone_replacement_history[target_phone_number]}")
+            # 如果有历史记录，直接使用历史的交换信息
+            return self._apply_historical_replacement(img_path, phone_region_box, target_phone_number, output_path)
+        
         # 1. 加载原始图像（解决中文路径问题）
         img = self._imread_unicode(img_path)
         if img is None:
@@ -74,7 +82,9 @@ class PhoneNumberProcessor:
         
         # 4. 智能字符交换
         if len(bboxes) >= 2:
-            swapped_img = self.smart_character_swap(phone_roi, bboxes, target_phone_number)
+            swapped_img, swap_info = self.smart_character_swap(phone_roi, bboxes, target_phone_number)
+            # 记录交换信息到历史
+            self.phone_replacement_history[target_phone_number] = swap_info
         else:
             print("字符数量不足, 无法进行字符交换")
             return False
@@ -94,6 +104,214 @@ class PhoneNumberProcessor:
         
         return success
     
+    def _apply_historical_replacement(self, img_path: str, phone_region_box: List[List[int]], 
+                                    target_phone_number: str, output_path: str) -> bool:
+        """
+        应用历史记录中的替换信息
+        
+        Args:
+            img_path: 图像路径
+            phone_region_box: 电话号码区域边界框
+            target_phone_number: 目标电话号码
+            output_path: 输出路径
+            
+        Returns:
+            bool: 是否处理成功
+        """
+        # 加载图像
+        img = self._imread_unicode(img_path)
+        if img is None:
+            return False
+            
+        # 提取区域
+        x1, y1 = phone_region_box[0]
+        x2, y2 = phone_region_box[1]
+        phone_roi = img[y1:y2, x1:x2].copy()
+        
+        # 重新分割
+        segmented_img, bboxes = self.center_symmetric_segmentation(phone_roi)
+        
+        # 应用历史交换信息
+        swap_info = self.phone_replacement_history[target_phone_number]
+        swapped_img = self._apply_swap_info(phone_roi, bboxes, swap_info)
+        
+        # 替换回原图并保存
+        result_img = self._replace_back_to_original(img, swapped_img, phone_region_box)
+        return self._imwrite_unicode(output_path, result_img)
+    
+    def _apply_swap_info(self, img: np.ndarray, bboxes: List[Tuple], swap_info: dict) -> np.ndarray:
+        """
+        根据交换信息应用字符交换
+        
+        Args:
+            img: 输入图像
+            bboxes: 字符边界框列表
+            swap_info: 交换信息字典
+            
+        Returns:
+            np.ndarray: 交换后的图像
+        """
+        if 'idx1' not in swap_info or 'idx2' not in swap_info:
+            return img
+            
+        idx1, idx2 = swap_info['idx1'], swap_info['idx2']
+        
+        if idx1 >= len(bboxes) or idx2 >= len(bboxes):
+            return img
+            
+        # 执行相同的交换逻辑
+        x1, y1, w1, h1 = bboxes[idx1]
+        x2, y2, w2, h2 = bboxes[idx2]
+        
+        # 判断大小box
+        area1, area2 = w1 * h1, w2 * h2
+        if area1 >= area2:
+            big_x, big_y, big_w, big_h = x1, y1, w1, h1
+            small_x, small_y, small_w, small_h = x2, y2, w2, h2
+        else:
+            big_x, big_y, big_w, big_h = x2, y2, w2, h2
+            small_x, small_y, small_w, small_h = x1, y1, w1, h1
+        
+        # 计算扩展后的小box区域
+        y_offset_top = (big_h - small_h) // 2
+        y_offset_bottom = (big_h - small_h) - y_offset_top
+        x_offset_left = (big_w - small_w) // 2
+        x_offset_right = (big_w - small_w) - x_offset_left
+        
+        small_y_top = max(0, small_y - y_offset_top)
+        small_y_bottom = min(img.shape[0], small_y + y_offset_bottom + small_h)
+        small_x_left = max(0, small_x - x_offset_left)
+        small_x_right = min(img.shape[1], small_x + x_offset_right + small_w)
+        
+        # 提取两个区域
+        roi1 = img[small_y_top:small_y_bottom, small_x_left:small_x_right].copy()
+        roi2 = img[big_y:big_y+big_h, big_x:big_x+big_w].copy()
+        
+        # 修复：确保尺寸匹配后再交换
+        result_img = img.copy()
+        
+        # 将roi1调整到big区域的尺寸
+        if roi1.shape[:2] != (big_h, big_w):
+            roi1_resized = cv2.resize(roi1, (big_w, big_h))
+        else:
+            roi1_resized = roi1
+        
+        # 将roi2调整到small扩展区域的尺寸
+        target_h = small_y_bottom - small_y_top
+        target_w = small_x_right - small_x_left
+        if roi2.shape[:2] != (target_h, target_w):
+            roi2_resized = cv2.resize(roi2, (target_w, target_h))
+        else:
+            roi2_resized = roi2
+        
+        # 执行交换
+        result_img[big_y:big_y+big_h, big_x:big_x+big_w] = roi1_resized
+        result_img[small_y_top:small_y_bottom, small_x_left:small_x_right] = roi2_resized
+        
+        return result_img
+    
+    def smart_character_swap(self, img: np.ndarray, bboxes: List[Tuple], target_phone_number: str) -> Tuple[np.ndarray, dict]:
+        """
+        智能字符交换（返回交换信息）
+        
+        Args:
+            img: 输入图像
+            bboxes: 字符边界框列表
+            target_phone_number: 目标手机号字符串
+            
+        Returns:
+            tuple: (交换后的图像, 交换信息字典)
+        """
+        if len(bboxes) < 2:
+            return img, {}
+        
+        # 清理手机号，去除空格等字符
+        clean_phone = re.sub(r'[\s\-\(\)\+]', '', target_phone_number)
+        if len(clean_phone) < len(bboxes):
+            # 如果清理后的手机号长度不够，使用原始字符串
+            clean_phone = target_phone_number
+            
+        # 随机选择两个不同的字符进行交换
+        # 从第四个字符开始寻找第一对不相同且都不为0的数字
+        idx1 = idx2 = -1
+        for i in range(3, min(len(bboxes)-1, len(clean_phone)-1)):
+            for j in range(i+1, min(len(bboxes), len(clean_phone))):
+                if (clean_phone[i] != clean_phone[j] and 
+                    clean_phone[i] != '0' and 
+                    clean_phone[j] != '0'):
+                    idx1, idx2 = i, j
+                    break
+            if idx1 != -1:  # 如果找到了合适的一对，跳出外层循环
+                break
+        
+        # 如果没找到合适的字符对，寻找前面不为0的两个数字
+        if idx1 == -1:
+            non_zero_indices = [i for i in range(min(len(bboxes), len(clean_phone))) 
+                              if clean_phone[i] != '0']
+            if len(non_zero_indices) >= 2:
+                idx1, idx2 = non_zero_indices[0], non_zero_indices[1]
+            else:
+                idx1, idx2 = 0, 1  # 实在找不到就用前两个
+        
+        print(f"交换第 {idx1} 和第 {idx2} 个字符")
+        
+        # 记录交换信息
+        swap_info = {
+            'idx1': idx1,
+            'idx2': idx2,
+            'clean_phone': clean_phone
+        }
+        
+        x1, y1, w1, h1 = bboxes[idx1]
+        x2, y2, w2, h2 = bboxes[idx2]
+        
+        # 判断大小box
+        area1, area2 = w1 * h1, w2 * h2
+        if area1 >= area2:
+            big_x, big_y, big_w, big_h = x1, y1, w1, h1
+            small_x, small_y, small_w, small_h = x2, y2, w2, h2
+        else:
+            big_x, big_y, big_w, big_h = x2, y2, w2, h2
+            small_x, small_y, small_w, small_h = x1, y1, w1, h1
+        
+        # 计算扩展后的小box区域
+        y_offset_top = (big_h - small_h) // 2
+        y_offset_bottom = (big_h - small_h) - y_offset_top
+        x_offset_left = (big_w - small_w) // 2
+        x_offset_right = (big_w - small_w) - x_offset_left
+        
+        small_y_top = max(0, small_y - y_offset_top)
+        small_y_bottom = min(img.shape[0], small_y + y_offset_bottom + small_h)
+        small_x_left = max(0, small_x - x_offset_left)
+        small_x_right = min(img.shape[1], small_x + x_offset_right + small_w)
+        
+        # 提取两个区域
+        roi1 = img[small_y_top:small_y_bottom, small_x_left:small_x_right].copy()
+        roi2 = img[big_y:big_y+big_h, big_x:big_x+big_w].copy()
+        
+        # 修复：确保尺寸匹配后再交换
+        result_img = img.copy()
+        
+        # 将roi1调整到big区域的尺寸
+        if roi1.shape[:2] != (big_h, big_w):
+            roi1_resized = cv2.resize(roi1, (big_w, big_h))
+        else:
+            roi1_resized = roi1
+        
+        # 将roi2调整到small扩展区域的尺寸
+        target_h = small_y_bottom - small_y_top
+        target_w = small_x_right - small_x_left
+        if roi2.shape[:2] != (target_h, target_w):
+            roi2_resized = cv2.resize(roi2, (target_w, target_h))
+        else:
+            roi2_resized = roi2
+        
+        # 执行交换
+        result_img[big_y:big_y+big_h, big_x:big_x+big_w] = roi1_resized
+        result_img[small_y_top:small_y_bottom, small_x_left:small_x_right] = roi2_resized
+        
+        return result_img, swap_info
+
     def center_symmetric_segmentation(self, img: np.ndarray, save_intermediate: bool = False) -> Tuple[np.ndarray, List[Tuple]]:
         """
         使用中心对称翻转改善字符居中的分割方法
@@ -156,74 +374,6 @@ class PhoneNumberProcessor:
             self._save_debug_images(img, normal_bboxes, restored_bboxes)
         
         return result_img, final_bboxes
-    
-    def smart_character_swap(self, img: np.ndarray, bboxes: List[Tuple], target_phone_number: str) -> np.ndarray:
-        """
-        智能字符交换
-        
-        Args:
-            img: 输入图像
-            bboxes: 字符边界框列表
-            target_phone_number: 目标手机号字符串
-            
-        Returns:
-            np.ndarray: 交换后的图像
-        """
-        if len(bboxes) < 2:
-            return img
-        
-        # 清理手机号，去除空格等字符
-        clean_phone = re.sub(r'[\s\-\(\)\+]', '', target_phone_number)
-        if len(clean_phone) < len(bboxes):
-            # 如果清理后的手机号长度不够，使用原始字符串
-            clean_phone = target_phone_number
-            
-        # 随机选择两个不同的字符进行交换
-        max_tries = 10
-        for _ in range(max_tries):
-            idx1, idx2 = np.random.randint(3, min(len(bboxes), len(clean_phone)), 2)
-            if idx1 != idx2 and idx1 < len(clean_phone) and idx2 < len(clean_phone):
-                if clean_phone[idx1] != clean_phone[idx2]:
-                    break
-        else:
-            # 如果找不到合适的字符对，默认交换前两个可用的字符
-            idx1, idx2 = 0, 1
-        
-        print(f"交换第 {idx1} 和第 {idx2} 个字符")
-        
-        x1, y1, w1, h1 = bboxes[idx1]
-        x2, y2, w2, h2 = bboxes[idx2]
-        
-        # 判断大小box
-        area1, area2 = w1 * h1, w2 * h2
-        if area1 >= area2:
-            big_x, big_y, big_w, big_h = x1, y1, w1, h1
-            small_x, small_y, small_w, small_h = x2, y2, w2, h2
-        else:
-            big_x, big_y, big_w, big_h = x2, y2, w2, h2
-            small_x, small_y, small_w, small_h = x1, y1, w1, h1
-        
-        # 计算扩展后的小box区域
-        y_offset_top = (big_h - small_h) // 2
-        y_offset_bottom = (big_h - small_h) - y_offset_top
-        x_offset_left = (big_w - small_w) // 2
-        x_offset_right = (big_w - small_w) - x_offset_left
-        
-        small_y_top = max(0, small_y - y_offset_top)
-        small_y_bottom = min(img.shape[0], small_y + y_offset_bottom + small_h)
-        small_x_left = max(0, small_x - x_offset_left)
-        small_x_right = min(img.shape[1], small_x + x_offset_right + small_w)
-        
-        # 提取两个区域
-        roi1 = img[small_y_top:small_y_bottom, small_x_left:small_x_right].copy()
-        roi2 = img[big_y:big_y+big_h, big_x:big_x+big_w].copy()
-        
-        # 交换
-        result_img = img.copy()
-        result_img[big_y:big_y+big_h, big_x:big_x+big_w] = roi1
-        result_img[small_y_top:small_y_bottom, small_x_left:small_x_right] = roi2
-        
-        return result_img
     
     def _character_segmentation_debug(self, img: np.ndarray, save_intermediate: bool = False) -> Tuple[np.ndarray, List[Tuple]]:
         """
@@ -415,6 +565,8 @@ class PhoneNumberProcessor:
         avg_color = np.mean(bg_pixels, axis=0)
         
         return avg_color, background_region
+    
+
 
 
 def main():
@@ -425,10 +577,10 @@ def main():
     processor = PhoneNumberProcessor()
     
     # 处理参数
-    img_path = "OCR/1-17.jpg"
-    phone_region_box = [[452, 1292], [936, 1413]]  # 电话号码区域
+    img_path = r"text_test\1-1.jpg"
+    phone_region_box = [[278,548],[509,600]]  # 电话号码区域
     target_phone_number = "18810032768"  # 目标电话号码
-    output_path = "OCR/Final_Result.jpg"
+    output_path = "text_test/Final_Result_phone_number.jpg"
     
     # 执行处理
     result = processor.process_phone_number(
@@ -444,4 +596,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

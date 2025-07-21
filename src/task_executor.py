@@ -84,6 +84,7 @@ class TaskExecutor:
         """初始化任务数据"""
         # 重置历史步骤
         self.history_steps = []
+        self.privacy_protector = PrivacyProtector()
         
         pattern = r'[（(].*?[）)]'
         if re.search(pattern, query):
@@ -219,12 +220,12 @@ class TaskExecutor:
             self._record_history_step(plan, observation)
             
             # 执行操作后等待时间，同时检查中断
-            if action_type == "open":
-                for i in range(50):  # 5秒等待，每0.1秒检查一次中断
-                    if self.is_interrupted:
-                        logger.info(f"🛑 步骤 {step} 等待过程中检测到中断请求，停止执行")
-                        return False
-                    time.sleep(0.1)
+            # if action_type == "open":
+            #     for i in range(50):  # 5秒等待，每0.1秒检查一次中断
+            #         if self.is_interrupted:
+            #             logger.info(f"🛑 步骤 {step} 等待过程中检测到中断请求，停止执行")
+            #             return False
+            #         time.sleep(0.1)
             
             step += 1
         
