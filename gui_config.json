@@ -1,0 +1,23 @@
+{
+  "output_dir": "output",
+  "batch_output_dir": "batch_output",
+  "api_key": "",
+  "model_name": "deepseek-r1",
+  "max_execution_times": 50,
+  "privacy_enabled": true,
+  "multimodal_enabled": false,
+  "device_id": "auto",
+  "excel_file": "验收通过数据/标贝采集需求.xlsx",
+  "selected_sheets": [],
+  "target_column": "示例query",
+  "window_geometry": "1200x850+321+65",
+  "last_task": "用滴滴出行预约7月22日下午14点出发去王府井的专车",
+  "app_packages": {
+    "美团外卖": "com.sankuai.meituan.takeoutnew",
+    "饿了么": "me.ele",
+    "爱奇艺": "com.qiyi.video",
+    "懂车帝": "com.ss.android.auto",
+    "滴滴出行": "com.sdu.didi.psnger",
+    "携程": "ctrip.android.view"
+  }
+}

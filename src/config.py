@@ -17,21 +17,21 @@ class Config:
         # API配置
         self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
         
-        # 模型配置  qwen-max、deepseek-r1、qwen-plus
+        # 模型配置  qwen-max-latest、deepseek-r1、qwen-plus-latest
         self.model_name = "qwen-max-latest"  # 默认模型
         
         # 模型参数配置
         self.model_params = {
-            "temperature": 0.0,
+            "temperature": 0.3,
             "stream": False,
-            "top_p": 0.8,
-            "top_k": 50,
+            "top_p": 0.9,
+            "top_k": 10,
             "enable_thinking": False
         }
         
         # 多模态增强配置
         self.multimodal_enhancement = {
-            "enabled": False,  # 是否启用多模态增强
+            "enabled": True,  # 是否启用多模态增强
             "fallback_to_xml": True,  # 增强失败时是否回退到XML
             "debug_mode": False  # 多模态调试模式
         }
@@ -87,6 +87,10 @@ class Config:
         logger.info("   参数配置:")
         for key, value in self.model_params.items():
             logger.info(f"     {key}: {value}")
+        
+        logger.info("   多模态增强配置:")
+        for key, value in self.multimodal_enhancement.items():
+            logger.info(f"     {key}: {value}")
     
     def get_app_package(self, app_name: str) -> str:
         """获取应用包名"""
@@ -121,9 +125,6 @@ class Config:
    - 搜索框已激活：格式："当前是[页面名称]，顶部搜索框已打开，可以输入搜索内容"
    示例："当前是爱奇艺首页，底部导航栏有首页、会员等功能、顶部有搜索框，点击搜索框可以进行相关搜索"
 
-   **搜索按钮场景：**
-   格式："当前是[页面名称]，底部导航栏有[功能1]、[功能2]等功能/按钮、右上角有搜索按钮，点击搜索按钮可以进行搜索"
-   示例："当前为微信主页面，下方有通讯录、发现等页面按钮，右上角有搜索按钮可以搜索内容"
 
    **功能页面场景：**
    格式："当前是[应用名][功能名]页面"
@@ -195,16 +196,11 @@ class Config:
 - **组合任务：** 所有子任务都完成时才算完成
 - 完成任务之后避免多余操作，如滑动等
 
-**任务完成判断示例：**
-- 任务要求打开美团外卖的"看病买药"功能，当成功跳转到相关页面后，即使页面XML中不包含"看病买药"字样，也应判断为任务完成
-- 任务要求打开美团外卖的"客服中心"，当成功跳转到相关页面后，即使页面XML中不包含"客服中心"字样，也应判断为任务完成
-- 判断任务完成应基于页面功能和上下文，而非仅依赖特定文本的出现
 
 **滑动和拖动操作判断指导：**
 1. **scroll（页面滑动）场景：**
    - 爱奇艺频道栏滑动：如果任务要求"打开电影"，但当前界面只显示"首页"、"电视剧"等少数频道，需要**向左scroll频道栏**查找电影频道
-   - 页面内容浏览：当界面内容需要滚动查看更多选项时
-   - 列表浏览：当搜索目标内容在当前界面不可见，但逻辑上应该存在时
+   - 向下滑动为模拟手指向下滑动，页面中的内容应该是向下滚动，向上滑动为模拟手指向上滑动，页面中的内容应该是向上滚动
 
 2. **drag（拖动）场景：**
    - 进度条调节：拖动视频播放进度条到指定位置
@@ -216,24 +212,16 @@ class Config:
    - 页面加载：页面正在加载时需要等待加载完成
    - 网络请求：数据加载、搜索结果返回等需要等待
 
-**操作位置计算方法：**
-**重要**：滑动/拖动操作必须在目标框的中心点附近进行，确保操作在正确的区域内！
 
 1. **定位操作区域**：从XML中找到可操作的区域（HorizontalScrollView、ProgressBar、SeekBar等）
 2. **计算中心Y坐标**：使用区域的bounds="[x1,y1][x2,y2]"，计算Y中心 = (y1 + y2) / 2
 3. **计算中心X坐标**：计算X中心 = (x1 + x2) / 2
-4. **scroll操作位置设置**：
+4. **scroll操作参考位置设置**：
    - 左右滑动：start_position = [X中心 + 150, Y中心]，stop_position = [X中心 - 150, Y中心]
    - 上下滑动：start_position = [X中心, Y中心 + 150]，stop_position = [X中心, Y中心 - 150]
 5. **drag操作位置设置**：
    - 根据拖动目标精确计算起始和结束位置
    - 进度条：start_position为当前位置，stop_position为目标进度位置
-
-**示例计算：**
-- 如果频道栏bounds="[9,204][977,313]"
-- Y中心 = (204 + 313) / 2 = 258，X中心 = (9 + 977) / 2 = 493
-- scroll左滑：start_position = [643, 258]，stop_position = [343, 258]
-- box = [[9, 204], [977, 313]]
 
 **操作格式：**
 - scroll: type="scroll", start_position, stop_position, box, duration=0.5
@@ -241,8 +229,7 @@ class Config:
 - wait: type="wait", wait_time, wait_reason
 
 **文本输入：**
-- 如果任务要求输入文本，需要先用touch点击输入框激活，再使用input输入文本
-- 如果页面中没有com.github.uiautomator的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
+- 如果页面中没有com.github.uiautomator或者Switch IME的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
 
 **重要提示：**
 - 打开应用优先使用Open操作（通过包名启动）
@@ -252,6 +239,7 @@ class Config:
 - 如果任务已完成，将type设置为"End"，description设置为"任务已完成"
 - 在订票等任务中，一般出发地为页面左边，目的地为页面右边，在选择出发地和目的地的搜索栏中，搜索栏中的提示文本可能都是“请输入目的城市/车站名”，这个不能作为判断当前是在选择出发地还是目的地的依据
 - 在xml信息中可能有当前页面隐藏的元素，需要上下滑动来查看，可以重点参考QwenVL提取的界面文本信息
+- 文本输入：如果页面中没有com.github.uiautomator或者Switch IME的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
 
 **隐私保护检测：**
 在分析界面时，请同时检测是否存在需要隐私保护的敏感信息：
@@ -318,8 +306,16 @@ class Config:
     }}
 }}"""
     
-    def get_analysis_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None) -> str:
-        """获取分析用的用户提示词"""
+    def get_analysis_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None) -> str:
+        """获取分析用的用户提示词
+        
+        Args:
+            query: 原始任务描述
+            xml_content: 当前界面XML内容
+            current_step: 当前步骤数
+            history_steps: 历史步骤列表
+            intervention_prompt: 人工介入的补充说明
+        """
         
         # 构建历史步骤信息
         history_text = ""
@@ -332,14 +328,20 @@ class Config:
                 history_text += f"步骤{i}: 手机界面状态为：{step_obs}；执行了: {step_desc} ;类型: {step_type})\n"
             history_text += "\n根据以上执行历史，请分析当前界面状态并决定下一步操作。如果上一步执行完任务了，请判断了任务完成。\n"
         
+        # 构建人工介入补充信息
+        intervention_text = ""
+        if intervention_prompt and intervention_prompt.strip():
+            intervention_text = f"\n=== 人工介入指导 ===\n重要提示：{intervention_prompt.strip()}\n请特别注意上述人工指导，并根据指导内容调整后续操作策略。\n"
+        
         return f"""
 当前任务: {query}
 当前步骤: {current_step}
 {history_text}
+{intervention_text}
 XML界面结构信息:
 {xml_content}
 
 请以上信息并告诉我下一步应该如何操作。请只返回一个JSON格式的响应，不要包含其他文本。"""
 
 # 创建全局配置实例
-config = Config() 
+config = Config()

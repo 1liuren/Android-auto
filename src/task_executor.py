@@ -35,11 +35,134 @@ class TaskExecutor:
         self.history_steps = []  # 添加历史步骤记录
         self.privacy_enabled = False  # 隐私保护开关
         self.is_interrupted = False  # 中断标志
+        
+        # 人工介入相关变量
+        self.manual_intervention_requested = False  # 人工介入请求标志
+        self.manual_intervention_callback = None  # 人工介入回调函数
+        self.intervention_prompt = ""  # 人工补充的prompt
+        self.restart_from_step = 0  # 从哪一步重新开始执行
+        self.intervention_event = None  # 用于线程同步的事件
     
     def interrupt_task(self):
         """中断当前任务"""
         self.is_interrupted = True
         logger.info("🛑 收到任务中断请求")
+    
+    def request_manual_intervention(self, callback_func=None):
+        """请求人工介入
+        
+        Args:
+            callback_func: 人工介入的回调函数，用于显示介入对话框
+        """
+        import threading
+        
+        self.manual_intervention_requested = True
+        self.manual_intervention_callback = callback_func
+        self.intervention_event = threading.Event()
+        
+        logger.info("👤 请求人工介入，等待用户输入...")
+        
+        # 如果有回调函数，在主线程中调用它显示介入对话框
+        if callback_func:
+            # 使用延迟调用确保在主线程中执行 GUI 操作
+            try:
+                # 尝试直接调用，如果在主线程中
+                callback_func()
+            except Exception as e:
+                logger.error(f"⚠️ 人工介入回调执行失败: {e}")
+                return False
+        
+        # 等待人工介入完成（设置超时避免无限等待）
+        if self.intervention_event:
+            logger.info("⏳ 等待用户完成人工介入...")
+            self.intervention_event.wait(timeout=300)  # 5分钟超时
+            
+            if not self.intervention_event.is_set():
+                logger.warning("⚠️ 人工介入超时，继续执行任务")
+                return False
+        
+        logger.info("✅ 人工介入完成，继续执行任务")
+        return True
+    
+    def complete_manual_intervention(self, intervention_prompt, restart_step):
+        """完成人工介入
+        
+        Args:
+            intervention_prompt: 人工补充的prompt
+            restart_step: 从哪一步重新开始执行（从1开始计数）
+        """
+        self.intervention_prompt = intervention_prompt
+        self.restart_from_step = max(1, int(restart_step))  # 确保至少从第1步开始
+        self.manual_intervention_requested = False
+        self.intervention_applied = False  # 标记人工介入是否已应用
+        
+        # 清理指定步骤及其后续的历史记录
+        self._cleanup_history_from_step(self.restart_from_step)
+        
+        # 通知等待的线程继续执行
+        if self.intervention_event:
+            self.intervention_event.set()
+        
+        logger.info(f"✅ 人工介入完成，将从第{self.restart_from_step}步重新开始")
+        logger.info(f"📝 补充prompt: {intervention_prompt}")
+    
+    def _cleanup_history_from_step(self, from_step):
+        """清理指定步骤及其后续的历史记录和文件
+        
+        Args:
+            from_step: 从哪一步开始清理（包含该步骤）
+        """
+        try:
+            # 清理history_steps中指定步骤及其后续的记录
+            original_length = len(self.history_steps)
+            self.history_steps = [step for step in self.history_steps if step.get('step', 0) < from_step]
+            cleaned_count = original_length - len(self.history_steps)
+            
+            logger.info(f"🧹 已清理 {cleaned_count} 个历史步骤记录")
+            
+            # 清理对应的图片文件
+            if self.output_dir and os.path.exists(self.output_dir):
+                self._cleanup_step_files(from_step)
+            
+        except Exception as e:
+            logger.error(f"❌ 清理历史记录失败: {e}")
+    
+    def _cleanup_step_files(self, from_step):
+        """清理指定步骤及其后续的文件
+        
+        Args:
+            from_step: 从哪一步开始清理
+        """
+        try:
+            import glob
+            
+            # 清理截图文件
+            screenshot_pattern = os.path.join(self.output_dir, f"*-{from_step:02d}-*.png")
+            for step_num in range(from_step, 100):  # 假设最多100步
+                pattern = os.path.join(self.output_dir, f"*-{step_num:02d}-*.png")
+                files = glob.glob(pattern)
+                for file_path in files:
+                    try:
+                        os.remove(file_path)
+                        logger.debug(f"🗑️ 已删除文件: {os.path.basename(file_path)}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 删除文件失败 {file_path}: {e}")
+            
+            # 清理XML文件
+            for step_num in range(from_step, 100):
+                xml_pattern = os.path.join(self.output_dir, f"*-{step_num:02d}-*.xml")
+                files = glob.glob(xml_pattern)
+                for file_path in files:
+                    try:
+                        os.remove(file_path)
+                        logger.debug(f"🗑️ 已删除XML文件: {os.path.basename(file_path)}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 删除XML文件失败 {file_path}: {e}")
+            
+            logger.info(f"🧹 已清理第{from_step}步及其后续的所有文件")
+            
+        except Exception as e:
+            logger.error(f"❌ 清理步骤文件失败: {e}")
     
     def run_task(self, query: str) -> bool:
         """运行任务"""
@@ -142,6 +265,18 @@ class TaskExecutor:
             if self.is_interrupted:
                 logger.info(f"🛑 步骤 {step} 开始前检测到中断请求，停止执行")
                 return False
+            
+            # 检查人工介入请求
+            if hasattr(self, 'manual_intervention_requested') and self.manual_intervention_requested:
+                logger.info(f"👤 步骤 {step} 开始前检测到人工介入请求，等待用户输入...")
+                if hasattr(self, 'intervention_event') and self.intervention_event:
+                    self.intervention_event.wait()  # 等待人工介入完成
+                    logger.info(f"✅ 人工介入完成，继续执行任务")
+                    
+                    # 检查是否需要从指定步骤重新开始
+                    if hasattr(self, 'restart_from_step') and self.restart_from_step:
+                        step = self.restart_from_step
+                        logger.info(f"🔄 根据人工介入指示，从第 {step} 步重新开始执行")
                 
             logger.info(f"\n=== 步骤 {step} ===")
             
@@ -155,12 +290,23 @@ class TaskExecutor:
             
             # 2. AI分析（包含隐私检测）
             try:
+                # 检查是否有人工介入的补充prompt需要传递
+                intervention_prompt = None
+                # 在重新开始的步骤应用人工介入prompt
+                if (hasattr(self, 'intervention_prompt') and self.intervention_prompt and 
+                    hasattr(self, 'restart_from_step') and step == self.restart_from_step and
+                    hasattr(self, 'intervention_applied') and not self.intervention_applied):
+                    intervention_prompt = self.intervention_prompt
+                    self.intervention_applied = True  # 标记为已应用
+                    logger.info(f"🔧 在第{step}步应用人工介入指导: {intervention_prompt}")
+                
                 ai_result = self.ai_analyzer.analyze_screen(
                     xml_path, 
                     self.query, 
                     step,
                     screenshot_path=screenshot_path,
-                    history_steps = self.history_steps
+                    history_steps=self.history_steps,
+                    intervention_prompt=intervention_prompt
                 )
             except Exception as e:
                 logger.error(f"❌ AI分析失败: {str(e)}")

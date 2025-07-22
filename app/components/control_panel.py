@@ -127,6 +127,17 @@ class ControlPanel:
         )
         self.execute_btn.pack(side="left", padx=(0, 10))
         
+        # 人工介入按钮
+        self.intervention_btn = create_icon_button(
+            button_frame,
+            icon="🛠️",
+            text="人工介入",
+            command=self._request_manual_intervention,
+            style_type="warning"
+        )
+        self.intervention_btn.pack(side="left", padx=(0, 10))
+        self.intervention_btn.config(state="disabled")  # 初始禁用
+        
         # 中断任务按钮
         self.interrupt_btn = create_icon_button(
             button_frame,
@@ -140,6 +151,7 @@ class ControlPanel:
         
         # 保存按钮引用到gui_app
         self.gui_app.execute_button = self.execute_btn
+        self.gui_app.intervention_button = self.intervention_btn
         self.gui_app.interrupt_button = self.interrupt_btn
     
     def _create_batch_task_section(self):
@@ -483,14 +495,94 @@ class ControlPanel:
         """取消全选所有sheets"""
         for var in self.gui_app.sheet_vars.values():
             var.set(False)
-        self.gui_app._log_output("❌ 已取消全选所有Sheets")
+        self.gui_app._log_output("")
     
 
     
     def grid(self, **kwargs):
-        """网格布局"""
+        """ """
         if self.frame:
             self.frame.grid(**kwargs)
+    
+    def _request_manual_intervention(self):
+        """请求人工介入"""
+        if not hasattr(self.gui_app, 'task_manager'):
+            messagebox.showerror("错误", "任务管理器未初始化！")
+            return
+        
+        # 检查是否有任务正在运行
+        if not self.gui_app.task_manager.is_task_running():
+            messagebox.showinfo("提示", "当前没有正在执行的任务！")
+            return
+        
+        # 检查任务执行器是否存在
+        if not hasattr(self.gui_app.task_manager, 'task_executor') or not self.gui_app.task_manager.task_executor:
+            messagebox.showerror("错误", "任务执行器未初始化！")
+            return
+        
+        try:
+            # 获取当前步骤数
+            current_step = len(self.gui_app.task_manager.task_executor.history_steps) + 1
+            
+            # 直接在主线程中显示对话框
+            self._show_intervention_dialog(current_step)
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"请求人工介入失败: {e}")
+    
+    
+    def _show_intervention_dialog(self, current_step):
+        """显示人工介入对话框"""
+        try:
+            from .intervention_dialog import show_intervention_dialog
+            
+            # 先设置人工介入状态，让任务执行器进入等待状态
+            if (hasattr(self.gui_app, 'task_manager') and 
+                hasattr(self.gui_app.task_manager, 'task_executor') and 
+                self.gui_app.task_manager.task_executor):
+                
+                executor = self.gui_app.task_manager.task_executor
+                # 设置人工介入状态
+                executor.manual_intervention_requested = True
+                import threading
+                executor.intervention_event = threading.Event()
+                
+                # 显示对话框
+                result = show_intervention_dialog(self.gui_app.root, current_step)
+                
+                if result:
+                    # 完成人工介入（新的对话框已包含确认流程）
+                    executor.complete_manual_intervention(
+                        result['intervention_prompt'],
+                        result['restart_step']
+                    )
+                    messagebox.showinfo("成功", "人工介入完成，任务将继续执行！")
+                else:
+                    # 用户取消了人工介入
+                    self._cancel_manual_intervention()
+            else:
+                messagebox.showerror("错误", "任务执行器未初始化！")
+            
+        except ImportError as e:
+            messagebox.showerror("错误", f"无法加载人工介入对话框: {e}")
+        except Exception as e:
+            messagebox.showerror("错误", f"显示人工介入对话框失败: {e}")
+    
+    def _cancel_manual_intervention(self):
+        """取消人工介入"""
+        try:
+            if (hasattr(self.gui_app, 'task_manager') and 
+                hasattr(self.gui_app.task_manager, 'task_executor') and 
+                self.gui_app.task_manager.task_executor):
+                
+                # 通知任务执行器取消介入
+                executor = self.gui_app.task_manager.task_executor
+                if hasattr(executor, 'intervention_event') and executor.intervention_event:
+                    executor.manual_intervention_requested = False
+                    executor.intervention_event.set()  # 解除等待状态
+                    
+        except Exception as e:
+            print(f"取消人工介入时发生错误: {e}")
     
     def _interrupt_task(self):
         """中断当前任务"""
@@ -515,7 +607,12 @@ class ControlPanel:
     def _update_task_buttons(self, task_running):
         """更新任务相关按钮的显示状态"""
         if task_running:
-            # 任务运行时：禁用执行按钮，启用中断按钮
+            # 任务运行时：禁用执行按钮，启用中断和人工介入按钮
+            self.execute_btn.config(state="disabled")
+            self.interrupt_btn.config(state="normal")
+            self.intervention_btn.config(state="normal")  # 任务运行时启用人工介入
+            
+            # 更新主窗口的按钮状态（如果存在）
             if hasattr(self.gui_app, 'execute_button'):
                 self.gui_app.execute_button.config(state="disabled")
             if hasattr(self.gui_app, 'batch_button'):
@@ -525,7 +622,12 @@ class ControlPanel:
             if hasattr(self.gui_app, 'batch_interrupt_button'):
                 self.gui_app.batch_interrupt_button.config(state="normal")
         else:
-            # 任务完成时：启用执行按钮，禁用中断按钮
+            # 任务完成时：启用执行按钮，禁用中断和人工介入按钮
+            self.execute_btn.config(state="normal")
+            self.interrupt_btn.config(state="disabled")
+            self.intervention_btn.config(state="disabled")  # 任务停止时禁用人工介入
+            
+            # 更新主窗口的按钮状态（如果存在）
             if hasattr(self.gui_app, 'execute_button'):
                 self.gui_app.execute_button.config(state="normal")
             if hasattr(self.gui_app, 'batch_button'):
@@ -546,4 +648,4 @@ class ControlPanel:
             buttons.append(self.gui_app.interrupt_button)
         if hasattr(self.gui_app, 'batch_interrupt_button'):
             buttons.append(self.gui_app.batch_interrupt_button)
-        return buttons 
+        return buttons

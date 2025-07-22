@@ -145,7 +145,7 @@ class DeviceController:
             if 0 <= x <= width and 0 <= y <= height:
                 logger.info(f"🎯 点击位置: ({x}, {y})")
                 self.device.click(x, y)
-                time.sleep(2)  # 等待界面响应
+                time.sleep(3)  # 等待界面响应
                 return True
             else:
                 logger.error(f"❌ 坐标超出屏幕范围: ({x}, {y}) vs ({width}x{height})")
@@ -179,7 +179,7 @@ class DeviceController:
         try:
             logger.info(f"⌨️  输入文本: {text}")
             self.device.send_keys(text)
-            time.sleep(1)
+            time.sleep(2)
             return True
         except Exception as e:
             logger.error(f"❌ 文本输入失败: {e}")

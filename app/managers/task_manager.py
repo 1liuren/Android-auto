@@ -68,6 +68,9 @@ class TaskManager:
         try:
             self.logger.info(f"🚀 开始执行任务: {query}")
             
+            # 更新按钮状态：任务开始时启用中断和人工介入按钮
+            self.gui_app.root.after(0, lambda: self._update_control_buttons(True))
+            
             # 检查是否被取消
             if self.cancel_requested:
                 self.logger.warning("⚠️ 任务已被用户取消")

@@ -26,8 +26,17 @@ class AIAnalyzer:
         # 显示当前模型配置
         config.print_model_config()
     
-    def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None) -> dict:
-        """分析当前屏幕状态并提供操作建议"""
+    def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None, intervention_prompt: str = None) -> dict:
+        """分析当前屏幕状态并提供操作建议
+        
+        Args:
+            xml_path: XML文件路径
+            query: 任务查询
+            current_step: 当前步骤
+            screenshot_path: 截图路径
+            history_steps: 历史步骤
+            intervention_prompt: 人工介入的补充说明
+        """
         # 读取XML内容
         with open(xml_path, "r", encoding="utf-8") as f:
             xml_content = f.read()
@@ -48,7 +57,7 @@ class AIAnalyzer:
                     raise
         
         # 构建提示词
-        user_prompt = self._build_prompt(query, enhanced_content, current_step, history_steps)
+        user_prompt = self._build_prompt(query, enhanced_content, current_step, history_steps, intervention_prompt)
         
         # 调用AI模型，添加稳定输出参数
         max_retries = 3
@@ -85,9 +94,17 @@ class AIAnalyzer:
         # 解析AI响应（如果失败会直接抛出异常）
         return self._parse_response(result)
     
-    def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None) -> str:
-        """构建AI提示词"""
-        return config.get_analysis_prompt(query, xml_content, current_step, history_steps)
+    def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None) -> str:
+        """构建 AI提示词
+        
+        Args:
+            query: 任务描述
+            xml_content: XML内容
+            current_step: 当前步骤
+            history_steps: 历史步骤
+            intervention_prompt: 人工介入的补充说明
+        """
+        return config.get_analysis_prompt(query, xml_content, current_step, history_steps, intervention_prompt)
     
     def _parse_response(self, response: str) -> dict:
         """解析AI响应"""
@@ -247,7 +264,7 @@ class AIAnalyzer:
             enhanced_xml = f"""<!-- 
 === QwenVL 提取的界面文本信息，其中信息可能在xml中不是以明文出现，这个结果可以以便理解界面，从而更好的执行任务 ===
 {html_content}
--->
+=== 原始XML内容，可能未包含图像中的全部文本 ===
 
 {xml_content}"""
             
@@ -267,13 +284,13 @@ class AIAnalyzer:
             messages = [
                 {
                     "role": "system",
-                    "content": "You are an AI specialized in recognizing and extracting text from images."
+                    "content": "You are an AI assistant specialized in recognizing and extracting text from images of mobile phone UI, describe the information you find."
                 },
                 {
                     "role": "user",
                     "content": [
                         {"image": image_path},
-                        {"text": "提取其中文字"}
+                        {"text": "请详细描述手机界面中的文字、按钮、图标等元素。如果有选中状态、数据输入框、选择控件等交互元素，请特别说明其当前状态和选中值。提供完整、准确的界面描述，以便更好地执行操作。"}
                     ]
                 }
             ]
