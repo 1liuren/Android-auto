@@ -381,7 +381,7 @@ class TaskExecutor:
             
             # 9. 记录历史步骤（在执行操作后）
             observation = ai_result.get("observation", "")
-            self._record_history_step(ai_result, step)
+            self._record_history_step(plan, observation, step)
             
             # 执行操作后等待时间，同时检查中断
             # if action_type == "open":
@@ -803,14 +803,18 @@ class TaskExecutor:
         
         return label_path
 
-    def _record_history_step(self, ai_result: str, step: int):
+    def _record_history_step(self, plan: dict, observation: str = "", step_number: int = None):
         """记录历史步骤"""
-        history_item = {
-            "step": step,
-            "content": ai_result
-        }
-        self.history_steps.append(history_item)
-        logger.debug(f"📝 历史步骤已记录: 第{history_item['step']}步") 
+        if plan and "description" in plan and "type" in plan:
+            history_item = {
+                "step": step_number if step_number is not None else len(self.history_steps) + 1,
+                "description": plan["description"],
+                "type": plan["type"],
+                "observation": observation
+            }
+            self.history_steps.append(history_item)
+            logger.debug(f"📝 历史步骤已记录: 第{history_item['step']}步 - {history_item['description']} ({history_item['type']})")
+
 
     def _process_privacy_data(self, data_list: List[dict], data_type: str) -> List[dict]:
         """处理隐私数据的通用方法"""

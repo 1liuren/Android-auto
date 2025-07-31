@@ -10,7 +10,7 @@
   "excel_file": "验收通过数据/标贝采集需求.xlsx",
   "selected_sheets": [],
   "target_column": "示例query",
-  "window_geometry": "1200x850+343+105",
+  "window_geometry": "1200x850+2218+80",
   "last_task": "打开爱奇艺电影",
   "app_packages": {
     "美团外卖": "com.sankuai.meituan.takeoutnew",
@@ -18,6 +18,7 @@
     "爱奇艺": "com.qiyi.video",
     "懂车帝": "com.ss.android.auto",
     "滴滴出行": "com.sdu.didi.psnger",
-    "携程": "ctrip.android.view"
+    "携程": "ctrip.android.view",
+    "抖音": "com.ss.android.ugc.aweme"
   }
 }

@@ -18,8 +18,8 @@ class Config:
         self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
         self.ark_api_key = os.getenv("ARK_API_KEY")
         
-        # 模型配置  qwen-max-latest、deepseek-r1、qwen-plus-latest
-        self.model_name = "qwen-max-latest"  # 默认模型
+        # 模型配置  qwen-max-latest、deepseek-r1、qwen-plus-latest、doubao-1-5-pro-32k-250115
+        self.model_name = "doubao-1-5-thinking-vision-pro-250428"  # 默认模型
         
         # 模型参数配置
         self.model_params = {
@@ -145,6 +145,16 @@ class Config:
 **应用包名列表：**
 {app_packages_text}
 
+**重要提示：**
+- 打开应用优先使用Open操作（通过包名启动）
+- 点击功能按钮后页面跳转成功即完成任务
+- 基于XML的bounds属性计算精确坐标：position = [(x1+x2)/2, (y1+y2)/2]
+- 优先选择clickable="true"的元素
+- 如果任务已完成，将type设置为"End"，description设置为"任务已完成"
+- 在订票等任务中，一般出发地为页面左边，目的地为页面右边，在选择出发地和目的地的搜索栏中，搜索栏中的提示文本可能都是“请输入目的城市/车站名”，这个不能作为判断当前是在选择出发地还是目的地的依据
+- 在xml信息中可能有当前页面隐藏的元素，需要上下滑动来查看，可以重点参考QwenVL提取的界面文本信息
+- 文本输入：如果页面中没有com.github.uiautomator或者Switch IME的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
+
 **隐私保护检测：**
 在分析界面时，请同时检测是否存在需要隐私保护的敏感信息：
 
@@ -252,8 +262,6 @@ class Config:
 当前步骤: {current_step}
 {history_text}
 {intervention_text}
-XML界面结构信息:
-{xml_content}
 
 请以上信息并告诉我下一步应该如何操作。请只返回一个JSON格式的响应，不要包含其他文本。"""
 

@@ -15,7 +15,11 @@ from .config import config
 from .logger_config import get_logger
 from .prompt import MOBILE_USE_DOUBAO
 import base64
-from volcenginesdkarkruntime import Ark
+# from volcenginesdkarkruntime import Ark
+from PIL import Image, ImageDraw
+import matplotlib.pyplot as plt
+import math
+from openai import OpenAI
 
 logger = get_logger(__name__)
 
@@ -27,13 +31,18 @@ class AIAnalyzer:
             raise ValueError("未配置DASHSCOPE_API_KEY")
         
         # 显示当前模型配置
-        self.client = Ark(
-            api_key=config.ark_api_key,
+        # self.client = Ark(
+        #     api_key=config.ark_api_key,
+        # )
+        api_key = "b2343050-267b-4913-8365-eb1c5251ea3d"
+        self.client = OpenAI(
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            api_key=api_key,
         )
         config.print_model_config()
     
     # 图片转 Base64 工具函数
-    def encode_image(image_path):
+    def encode_image(self, image_path):
         
         image_format = image_path.split('.')[-1]  # 提取图片格式（如png）
         
@@ -55,7 +64,9 @@ class AIAnalyzer:
         
         # 构建提示词
         
-        system_prompt = MOBILE_USE_DOUBAO.format(language="Chinese", instruction=query)
+        # system_prompt = MOBILE_USE_DOUBAO.format(language="Chinese", instruction=config.get_ai_system_prompt())
+        system_prompt = config.get_ai_system_prompt()
+        user_prompt = self._build_prompt(query,xml_path, current_step, history_steps, intervention_prompt, restart_from_step)
         
         base64_image, image_format = self.encode_image(screenshot_path)
         # 调用AI模型，添加稳定输出参数
@@ -63,17 +74,17 @@ class AIAnalyzer:
         messages = [
             {
                 "role": "user",
-                "content": system_prompt
+                "content": system_prompt + user_prompt
             }
         ]
         
         # 如果有历史步骤，添加到消息列表中
-        if history_steps:
-            for step in history_steps:
-                messages.append({
-                    "role": "assistant",
-                    "content": f"{step.get('content', '')}"
-                })
+        # if history_steps:
+        #     for step in history_steps:
+        #         messages.append({
+        #             "role": "assistant",
+        #             "content": f"{step.get('content', '')}"
+        #         })
         
         # 添加当前图片消息
         messages.append({
@@ -102,7 +113,7 @@ class AIAnalyzer:
                 
                 if config.model_name in ['qwen-max', 'qwen-plus', 'qwen-plus-latest', 'qwen-max-latest']:
                     result = response.output.text
-                elif config.model_name in ['doubao-vison']:
+                elif config.model_name in ['doubao-1-5-thinking-vision-pro-250428']:
                     result = response.choices[0].message.content
                 else:
                     result = response.output.choices[0].message.content
@@ -117,6 +128,7 @@ class AIAnalyzer:
                     raise
         
         # 解析AI响应（如果失败会直接抛出异常）
+        print(result)
         return self._parse_response(result)
     
     def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> str:
@@ -131,18 +143,39 @@ class AIAnalyzer:
             restart_from_step: 从哪一步重新开始（用于插入人工介入）
         """
         return config.get_analysis_prompt(query, xml_content, current_step, history_steps, intervention_prompt, restart_from_step)
-    
+        # return config.get_ai_system_prompt()
+
     def _parse_response(self, response: str) -> dict:
+        """解析AI响应"""
+        # 清理响应文本
+        cleaned_response = self._clean_response(response)
+        
+        # 提取第一个完整的JSON对象
+        json_obj = self._extract_first_valid_json(cleaned_response)
+        # 转换坐标
+        json_obj["plan"]["position"] = self.position_convert(json_obj["plan"]["position"], config.default_screen_resolution) if json_obj["plan"]["position"] else None
+        json_obj["plan"]["box"] = self.box_convert(json_obj["plan"]["box"], config.default_screen_resolution) if json_obj["plan"]["box"] else None
+        json_obj["plan"]["start_position"] = self.position_convert(json_obj["plan"]["start_position"], config.default_screen_resolution) if json_obj["plan"]["start_position"] else None
+        json_obj["plan"]["stop_position"] = self.position_convert(json_obj["plan"]["stop_position"], config.default_screen_resolution) if json_obj["plan"]["stop_position"] else None
+
+        if json_obj:
+            # 验证和修复必要字段
+            return self._validate_and_fix_response(json_obj)
+        else:
+            # 直接抛出异常，不使用备用方案
+            raise ValueError(f"无法解析AI响应为有效JSON格式。响应内容: {response[:200]}...")
+    
+    def _parse_doubao_response(self, response: str) -> dict:
         """解析AI响应"""
         parsed_output = json.loads(parse_action_output(response))
         print(parsed_output)
 
         # 转换坐标
-        parsed_output["start_box"] = self.coordinates_convert(parsed_output["start_box"], config.default_screen_resolution) if parsed_output["start_box"] else None
-        parsed_output["end_box"] = self.coordinates_convert(parsed_output["end_box"], config.default_screen_resolution) if parsed_output["end_box"] else None
+        parsed_output["start_box"] = self.box_convert(parsed_output["start_box"], config.default_screen_resolution) if parsed_output["start_box"] else None
+        parsed_output["end_box"] = self.box_convert(parsed_output["end_box"], config.default_screen_resolution) if parsed_output["end_box"] else None
         return parsed_output
 
-    def parse_action_output(output_text):
+    def parse_action_output(self, output_text):
         # 提取Thought部分
         thought_match = re.search(r'Thought:(.*?)\nAction:', output_text, re.DOTALL)
         thought = thought_match.group(1).strip() if thought_match else ""
@@ -205,7 +238,7 @@ class AIAnalyzer:
 
         return json.dumps(result, ensure_ascii=False, indent=2)
 
-    def coordinates_convert(relative_bbox, img_size):
+    def box_convert(self, relative_bbox, img_size):
         """
         将相对坐标[0,1000]转换为图片上的绝对像素坐标
 
@@ -221,21 +254,49 @@ class AIAnalyzer:
             [500, 1000, 600, 1200]  # 对于2000高度的图片，y坐标×2
         """
         # 参数校验
-        if len(relative_bbox) != 4 or len(img_size) != 2:
-            raise ValueError("输入参数格式应为: relative_bbox=[x1,y1,x2,y2], img_size=(width,height)")
+        # if len(relative_bbox) != 4 or len(img_size) != 2:
+        #     raise ValueError("输入参数格式应为: relative_bbox=[x1,y1,x2,y2], img_size=(width,height)")
 
         # 解包图片尺寸
         img_width, img_height = img_size
 
         # 计算绝对坐标
-        abs_x1 = int(relative_bbox[0] * img_width / 1000)
-        abs_y1 = int(relative_bbox[1] * img_height / 1000)
-        abs_x2 = int(relative_bbox[2] * img_width / 1000)
-        abs_y2 = int(relative_bbox[3] * img_height / 1000)
+        abs_x1 = int(relative_bbox[0][0] * img_width / 1000)
+        abs_y1 = int(relative_bbox[0][1] * img_height / 1000)
+        abs_x2 = int(relative_bbox[1][0] * img_width / 1000)
+        abs_y2 = int(relative_bbox[1][1] * img_height / 1000)
 
-        return [abs_x1, abs_y1, abs_x2, abs_y2]
+        return [[abs_x1, abs_y1], [abs_x2, abs_y2]]
 
-    def draw_box_and_show(image, start_box=None, end_box=None, direction=None):
+    def position_convert(self, position, img_size):
+        """
+        将相对坐标[0,1000]转换为图片上的绝对像素坐标
+
+        参数:
+            position: 相对坐标列表/元组 [x, y] (范围0-1000)
+            img_size: 图片尺寸元组 (width, height)
+
+        返回:
+            绝对坐标列表 [x1, y1, x2, y2] (单位:像素)
+
+        示例:
+            >>> coordinates_convert([500, 500, 600, 600], (1000, 2000))
+            [500, 1000, 600, 1200]  # 对于2000高度的图片，y坐标×2
+        """
+        # 参数校验
+        if len(position) != 2 or len(img_size) != 2:
+            raise ValueError("输入参数格式应为: position=[x,y], img_size=(width,height)")
+
+        # 解包图片尺寸
+        img_width, img_height = img_size
+
+        # 计算绝对坐标
+        abs_x = int(position[0] * img_width / 1000)
+        abs_y = int(position[1] * img_height / 1000)
+
+        return [abs_x, abs_y]
+
+    def draw_box_and_show(self, image, start_box=None, end_box=None, direction=None):
         """
         在图片上绘制两个边界框和指向箭头
 
@@ -280,7 +341,7 @@ class AIAnalyzer:
         plt.axis('on')  # 不显示坐标轴
         plt.show()
 
-    def draw_arrow_head(draw, start, end, color, size):
+    def draw_arrow_head(self, draw, start, end, color, size):
         """
         绘制箭头头部
         """
@@ -301,7 +362,7 @@ class AIAnalyzer:
         # 绘制箭头
         draw.polygon([p1, p2, p3], fill=color)
 
-    def calculate_drag_endpoint(start_point, direction, length):
+    def calculate_drag_endpoint(self, start_point, direction, length):
         """
         计算drag操作的箭头终点
 
