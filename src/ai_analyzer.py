@@ -13,6 +13,9 @@ from dashscope import Generation
 from dashscope import MultiModalConversation
 from .config import config
 from .logger_config import get_logger
+from .prompt import MOBILE_USE_DOUBAO
+import base64
+from volcenginesdkarkruntime import Ark
 
 logger = get_logger(__name__)
 
@@ -24,7 +27,18 @@ class AIAnalyzer:
             raise ValueError("未配置DASHSCOPE_API_KEY")
         
         # 显示当前模型配置
+        self.client = Ark(
+            api_key=config.ark_api_key,
+        )
         config.print_model_config()
+    
+    # 图片转 Base64 工具函数
+    def encode_image(image_path):
+        
+        image_format = image_path.split('.')[-1]  # 提取图片格式（如png）
+        
+        with open(image_path, "rb") as f:
+            return base64.b64encode(f.read()).decode('utf-8'), image_format
     
     def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> dict:
         """分析当前屏幕状态并提供操作建议
@@ -38,46 +52,50 @@ class AIAnalyzer:
             intervention_prompt: 人工介入的补充说明
             restart_from_step: 从哪一步重新开始（用于插入人工介入）
         """
-        # 读取XML内容
-        with open(xml_path, "r", encoding="utf-8") as f:
-            xml_content = f.read()
-        
-        # 精简XML内容，减少冗余信息
-        # from .xml_simplifier import xml_simplifier
-        # simplified_xml = xml_simplifier.simplify_xml(xml_content)
-        
-        # 如果提供了截图且启用了多模态增强，使用多模态增强
-        enhanced_content = xml_content
-        if (screenshot_path and os.path.exists(screenshot_path) and 
-            config.multimodal_enhancement.get("enabled", False)):
-            try:
-                enhanced_content = self._enhance_with_qwenvl_html(xml_content, screenshot_path)
-                if config.multimodal_enhancement.get("debug_mode", False):
-                    logger.info("🔍 多模态增强成功")
-            except Exception as e:
-                if config.multimodal_enhancement.get("fallback_to_xml", True):
-                    logger.warning(f"多模态增强失败，回退到原始XML: {e}")
-                else:
-                    logger.error(f"多模态增强失败: {e}")
-                    raise
         
         # 构建提示词
-        user_prompt = self._build_prompt(query, enhanced_content, current_step, history_steps, intervention_prompt, restart_from_step)
         
+        system_prompt = MOBILE_USE_DOUBAO.format(language="Chinese", instruction=query)
+        
+        base64_image, image_format = self.encode_image(screenshot_path)
         # 调用AI模型，添加稳定输出参数
+        # 构建多轮对话消息列表
+        messages = [
+            {
+                "role": "user",
+                "content": system_prompt
+            }
+        ]
+        
+        # 如果有历史步骤，添加到消息列表中
+        if history_steps:
+            for step in history_steps:
+                messages.append({
+                    "role": "assistant",
+                    "content": f"{step.get('content', '')}"
+                })
+        
+        # 添加当前图片消息
+        messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/{image_format};base64,{base64_image}"
+                    }
+                }
+            ]
+        })
         max_retries = 3
         retry_count = 0
         
         while retry_count < max_retries:
             try:
                 # logger.info(f"模型输入: {user_prompt}")
-                response = Generation.call(
-                    api_key=config.dashscope_api_key,
+                response = self.client.chat.completions.create(
                     model=config.model_name,
-                    messages=[
-                        {"role": "system", "content": config.get_ai_system_prompt()},
-                        {"role": "user", "content": user_prompt}
-                    ],
+                    messages=messages,
                     # 使用配置文件中的稳定输出参数
                     **config.model_params
                 )
@@ -85,9 +103,7 @@ class AIAnalyzer:
                 if config.model_name in ['qwen-max', 'qwen-plus', 'qwen-plus-latest', 'qwen-max-latest']:
                     result = response.output.text
                 elif config.model_name in ['doubao-vison']:
-                    result = ""
-                    for message in response:
-                        result += message.choices[0].delta.content
+                    result = response.choices[0].message.content
                 else:
                     result = response.output.choices[0].message.content
                 # result = response.output.choices[0].message.content

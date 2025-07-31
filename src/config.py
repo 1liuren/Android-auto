@@ -16,17 +16,18 @@ class Config:
     def __init__(self):
         # API配置
         self.dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
+        self.ark_api_key = os.getenv("ARK_API_KEY")
         
         # 模型配置  qwen-max-latest、deepseek-r1、qwen-plus-latest
         self.model_name = "qwen-max-latest"  # 默认模型
         
         # 模型参数配置
         self.model_params = {
-            "temperature": 0.3,
-            "stream": False,
-            "top_p": 0.9,
-            "top_k": 10,
-            "enable_thinking": False
+            "temperature": 0.0,
+            "stream": False
+            # "top_p": 0.9,
+            # "top_k": 10,
+            # "enable_thinking": False
         }
         
         # 多模态增强配置
@@ -49,7 +50,8 @@ class Config:
             "爱奇艺": "com.qiyi.video",
             "懂车帝": "com.ss.android.auto",
             "滴滴出行": "com.sdu.didi.psnger",
-            "携程": "ctrip.android.view"
+            "携程": "ctrip.android.view",
+            "抖音": "com.ss.android.ugc.aweme"
         }
         
         #最大执行次数
@@ -105,6 +107,7 @@ class Config:
         """更新屏幕分辨率"""
         self.default_screen_resolution = [width, height]
         logger.info(f"屏幕分辨率已更新: {width}x{height}")
+        
     
     def get_ai_system_prompt(self) -> str:
         """获取AI系统提示词"""
