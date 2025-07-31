@@ -1,0 +1,31 @@
+---
+globs: app/dialogs/coordinate_annotation_dialog.py,app/dialogs/intervention_dialog.py
+---
+# 标注工具和人工干预对话框规范
+
+## 坐标标注规则
+1. 点标注和框标注协调：
+   - 先画点再画框：使用点的坐标作为框的中心点
+   - 先画框再画点：使用框的bbox，不生成默认bbox
+   - 清除标注时必须重置协调状态
+
+2. 箭头标注规则：
+   - scroll/drag操作必须规整为水平或垂直方向
+   - 使用dx和dy的差值判断主方向
+   - 保持主方向，次要方向使用起点坐标
+
+## 截图和XML处理
+1. 文件命名：
+   - 截图：`screenshot.jpg`
+   - XML：`hierarchy.xml`
+   - 临时预览：`temp_intervention_preview.jpg`
+
+2. 路径管理：
+   - 使用固定文件名而不是时间戳
+   - 临时文件统一存放在`temp/`目录
+   - 必须在_get_modified_result中清理临时文件
+
+3. 状态更新：
+   - 更新screenshot_path和xml_path
+   - 同步更新AI结果中的路径
+   - End操作时才允许设置任务完成状态为True

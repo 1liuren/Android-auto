@@ -32,6 +32,7 @@ class TaskManager:
         self.current_task = None
         self.task_executor = None
         self.cancel_requested = False
+        self.manual_intervention_enabled = False  # 人工接管模式开关
         self.logger = get_logger("task_manager")
         
     def execute_single_task(self, task_query):
@@ -107,6 +108,12 @@ class TaskManager:
             # 创建任务执行器
             output_dir = self.gui_app.output_dir_var.get() or "output"
             self.task_executor = TaskExecutor(output_base_dir=output_dir)
+            
+            # 设置人工接管模式
+            self.task_executor.set_manual_intervention(self.manual_intervention_enabled)
+            
+            # 设置GUI回调函数
+            self.task_executor.set_gui_callback(self._handle_gui_callback)
             
             # 更新任务执行器的应用包名映射
             config.app_packages.update(self.gui_app.app_packages)
@@ -329,6 +336,12 @@ class TaskManager:
                         # 创建任务执行器，直接输出到目标路径
                         executor = TaskExecutor(output_base_dir=sheet_output_dir)
                         
+                        # 设置人工接管模式
+                        executor.set_manual_intervention(self.manual_intervention_enabled)
+                        
+                        # 设置GUI回调函数
+                        executor.set_gui_callback(self._handle_gui_callback)
+                        
                         # 保存executor引用用于中断
                         self.task_executor = executor
                         
@@ -448,11 +461,11 @@ class TaskManager:
                     self.task_executor.interrupt_task()
                     self.logger.warning("🛑 已向任务执行器发送中断信号")
                     
-                    # # 清理应用和保存状态
-                    # self.logger.info("🧹 正在清理应用...")
-                    # self.task_executor.device.clean_apps()
-                    # self.task_executor.save_interrupted_task()
-                    # self.logger.info("💾 中断状态已保存")
+                    # 清理应用和保存状态
+                    self.logger.info("🧹 正在清理应用...")
+                    self.task_executor.device.clean_apps()
+                    self.task_executor.save_interrupted_task()
+                    self.logger.info("💾 中断状态已保存")
                     
                 except Exception as e:
                     self.logger.warning(f"⚠️ 中断或清理任务时出错: {e}")
@@ -470,4 +483,48 @@ class TaskManager:
         elif self.current_task.is_alive():
             return "running"
         else:
-            return "completed" 
+            return "completed"
+    
+    def set_manual_intervention(self, enabled):
+        """设置人工接管模式"""
+        self.manual_intervention_enabled = enabled
+        self.logger.info(f"🔧 人工接管模式已{'启用' if enabled else '禁用'}")
+        
+        # 如果有任务执行器，同步设置
+        if self.task_executor:
+            self.task_executor.set_manual_intervention(enabled)
+    
+    def is_manual_intervention_enabled(self):
+        """检查是否启用人工接管模式"""
+        return self.manual_intervention_enabled
+    
+    def _handle_gui_callback(self, action, data):
+        """处理GUI回调"""
+        try:
+            if action == 'show_intervention_dialog':
+                # 在主线程中显示人工接管对话框
+                self.gui_app.root.after(0, lambda: self._show_intervention_dialog(data))
+            else:
+                self.logger.warning(f"⚠️ 未知的GUI回调动作: {action}")
+        except Exception as e:
+            self.logger.error(f"❌ GUI回调处理失败: {e}")
+    
+    def _show_intervention_dialog(self, data):
+        """显示人工接管对话框"""
+        try:
+            # 检查控制面板是否有显示对话框的方法
+            if hasattr(self.gui_app, 'control_panel') and hasattr(self.gui_app.control_panel, 'show_intervention_dialog'):
+                self.gui_app.control_panel.show_intervention_dialog(
+                    ai_result=data['ai_result'],
+                    step=data['step'],
+                    screenshot_path=data['screenshot_path'],
+                    callback=data['callback']
+                )
+            else:
+                self.logger.error("❌ 控制面板未实现人工接管对话框方法")
+                # 自动通过
+                data['callback'](True)
+        except Exception as e:
+            self.logger.error(f"❌ 显示人工接管对话框失败: {e}")
+            # 出错时自动通过
+            data['callback'](True)

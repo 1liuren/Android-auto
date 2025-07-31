@@ -1,0 +1,23 @@
+---
+description: 总体的项目架构
+alwaysApply: false
+---
+# 项目结构和架构指南
+
+这是一个基于Python的Android自动化测试工具，使用AI进行界面分析和操作规划。
+
+## 主要组件：
+
+### 核心逻辑 (`src/`)
+- [src/task_executor.py](mdc:src/task_executor.py): 任务执行器，协调设备控制和AI分析
+- [src/ai_analyzer.py](mdc:src/ai_analyzer.py): AI分析器，使用DashScope进行界面分析
+- [src/device_controller.py](mdc:src/device_controller.py): 设备控制器，基于uiautomator2
+
+### GUI界面 (`app/`)
+- [app/main_window.py](mdc:app/main_window.py): 主窗口
+- [app/managers/](mdc:app/managers/): 管理器模块（设备、任务、配置）
+- [app/components/](mdc:app/components/): UI组件
+- [app/dialogs/](mdc:app/dialogs/): 对话框组件
+
+### 工具类 (`utils/`)
+- [utils/image_marker.py](mdc:utils/image_marker.py): 图像标注工具

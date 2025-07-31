@@ -1,0 +1,27 @@
+---
+globs: src/task_executor.py,src/ai_analyzer.py
+---
+# 操作类型规范
+
+## 标准操作类型
+- `touch`: 普通点击，需要position和box
+- `long_touch`: 长按，需要position和box
+- `input`: 文本输入，需要position、box和text
+- `scroll`: 页面滑动，需要start_position、stop_position和box
+- `drag`: 精确拖动，需要start_position、stop_position和box
+- `wait`: 等待操作，需要wait_time和wait_reason
+- `open`: 打开应用，需要app和package
+- `end`: 结束任务
+
+## 兼容性处理
+- `tap` -> `touch`
+- `typing` -> `input`
+- `swipe` -> `scroll`
+
+## 操作参数要求
+1. position格式：`[x, y]`
+2. box格式：支持两种
+   - `[x1, y1, x2, y2]`
+   - `[[x1, y1], [x2, y2]]`
+3. duration默认值：0.5秒
+4. wait_time默认值：3秒

@@ -35,6 +35,7 @@ class TaskExecutor:
         self.history_steps = []  # 添加历史步骤记录
         self.privacy_enabled = False  # 隐私保护开关
         self.is_interrupted = False  # 中断标志
+        self.manual_intervention_mode = False  # 人工接管模式开关
         
         # 人工介入相关变量
         self.manual_intervention_requested = False  # 人工介入请求标志
@@ -42,6 +43,7 @@ class TaskExecutor:
         self.intervention_prompt = ""  # 人工补充的prompt
         self.restart_from_step = 0  # 从哪一步重新开始执行
         self.intervention_event = None  # 用于线程同步的事件
+        self.intervention_logged = False  # 人工介入日志记录标记
     
     def interrupt_task(self):
         """中断当前任务"""
@@ -84,6 +86,11 @@ class TaskExecutor:
         logger.info("✅ 人工介入完成，继续执行任务")
         return True
     
+    def set_manual_intervention(self, enabled):
+        """设置人工接管模式"""
+        self.manual_intervention_mode = enabled
+        logger.info(f"🔧 人工接管模式已{'启用' if enabled else '禁用'}")
+    
     def complete_manual_intervention(self, intervention_prompt, restart_step):
         """完成人工介入
         
@@ -94,7 +101,7 @@ class TaskExecutor:
         self.intervention_prompt = intervention_prompt
         self.restart_from_step = max(1, int(restart_step))  # 确保至少从第1步开始
         self.manual_intervention_requested = False
-        self.intervention_applied = False  # 标记人工介入是否已应用
+        self.intervention_logged = False  # 重置日志标记，确保新的介入会被记录
         
         # 清理指定步骤及其后续的历史记录
         self._cleanup_history_from_step(self.restart_from_step)
@@ -104,7 +111,7 @@ class TaskExecutor:
             self.intervention_event.set()
         
         logger.info(f"✅ 人工介入完成，将从第{self.restart_from_step}步重新开始")
-        logger.info(f"📝 补充prompt: {intervention_prompt}")
+        logger.info(f"📝 补充prompt将全局生效: {intervention_prompt}")
     
     def _cleanup_history_from_step(self, from_step):
         """清理指定步骤及其后续的历史记录和文件
@@ -292,13 +299,14 @@ class TaskExecutor:
             try:
                 # 检查是否有人工介入的补充prompt需要传递
                 intervention_prompt = None
-                # 在重新开始的步骤应用人工介入prompt
+                # 全局应用人工介入prompt（从重新开始的步骤开始，后续所有步骤都生效）
                 if (hasattr(self, 'intervention_prompt') and self.intervention_prompt and 
-                    hasattr(self, 'restart_from_step') and step == self.restart_from_step and
-                    hasattr(self, 'intervention_applied') and not self.intervention_applied):
+                    hasattr(self, 'restart_from_step') and step >= self.restart_from_step):
                     intervention_prompt = self.intervention_prompt
-                    self.intervention_applied = True  # 标记为已应用
-                    logger.info(f"🔧 在第{step}步应用人工介入指导: {intervention_prompt}")
+                    # 只在第一次应用时记录日志，避免重复日志
+                    if not hasattr(self, 'intervention_logged') or not self.intervention_logged:
+                        logger.info(f"🔧 从第{step}步开始全局应用人工介入指导: {intervention_prompt}")
+                        self.intervention_logged = True
                 
                 ai_result = self.ai_analyzer.analyze_screen(
                     xml_path, 
@@ -306,7 +314,8 @@ class TaskExecutor:
                     step,
                     screenshot_path=screenshot_path,
                     history_steps=self.history_steps,
-                    intervention_prompt=intervention_prompt
+                    intervention_prompt=intervention_prompt,
+                    restart_from_step=getattr(self, 'restart_from_step', None)
                 )
             except Exception as e:
                 logger.error(f"❌ AI分析失败: {str(e)}")
@@ -326,6 +335,15 @@ class TaskExecutor:
             
             # 4. 显示分析结果
             self._display_analysis_result(ai_result, step)
+            
+            # 4.5. 人工接管模式处理
+            if self.manual_intervention_mode:
+                logger.info(f"👤 人工接管模式已启用，等待用户审核AI输出...")
+                
+                # 请求人工审核AI输出
+                if not self._request_manual_review(ai_result, step, final_screenshot_path):
+                    logger.warning(f"⚠️ 人工审核被取消或超时，停止执行")
+                    return False
             
             # 5. 检查任务是否完成
             if self._is_task_completed(ai_result):
@@ -363,7 +381,7 @@ class TaskExecutor:
             
             # 9. 记录历史步骤（在执行操作后）
             observation = ai_result.get("observation", "")
-            self._record_history_step(plan, observation)
+            self._record_history_step(plan, observation, step)
             
             # 执行操作后等待时间，同时检查中断
             # if action_type == "open":
@@ -764,7 +782,8 @@ class TaskExecutor:
         
         action_type = plan.get("type", "").lower()
         
-        ImageMarker.mark_action(
+        # 调用ImageMarker生成标注图片
+        success = ImageMarker.mark_action(
             screenshot_path,
             label_path,
             position=plan.get("position"),
@@ -777,18 +796,24 @@ class TaskExecutor:
             swipe_end=plan.get("swipe_end")
         )
         
+        if success:
+            logger.info(f"✅ 标注图片已生成: {label_path}")
+        else:
+            logger.warning(f"⚠️ 标注图片生成失败: {label_path}")
+        
         return label_path
 
-    def _record_history_step(self, plan: dict, observation: str = ""):
+    def _record_history_step(self, plan: dict, observation: str = "", step_number: int = None):
         """记录历史步骤"""
         if plan and "description" in plan and "type" in plan:
             history_item = {
+                "step": step_number if step_number is not None else len(self.history_steps) + 1,
                 "description": plan["description"],
                 "type": plan["type"],
                 "observation": observation
             }
             self.history_steps.append(history_item)
-            logger.debug(f"📝 历史步骤已记录: {history_item['description']} ({history_item['type']})") 
+            logger.debug(f"📝 历史步骤已记录: 第{history_item['step']}步 - {history_item['description']} ({history_item['type']})") 
 
     def _process_privacy_data(self, data_list: List[dict], data_type: str) -> List[dict]:
         """处理隐私数据的通用方法"""
@@ -893,5 +918,70 @@ class TaskExecutor:
         except Exception as e:
             logger.error(f"❌ 边界解析失败: {e}")
             return None
+    
+    def _request_manual_review(self, ai_result: dict, step: int, screenshot_path: str) -> bool:
+        """请求人工审核AI输出
+        
+        Args:
+            ai_result: AI分析结果
+            step: 当前步骤
+            screenshot_path: 截图路径
+            
+        Returns:
+            bool: 是否继续执行
+        """
+        try:
+            import threading
+            
+            # 创建同步事件
+            review_event = threading.Event()
+            review_result = {'approved': False, 'modified_result': None}
+            
+            def review_callback(approved, modified_result=None):
+                """审核回调函数"""
+                review_result['approved'] = approved
+                review_result['modified_result'] = modified_result
+                review_event.set()
+            
+            # 通过GUI显示人工审核对话框
+            if hasattr(self, 'gui_callback') and self.gui_callback:
+                # 在主线程中显示对话框
+                self.gui_callback('show_intervention_dialog', {
+                    'ai_result': ai_result,
+                    'step': step,
+                    'screenshot_path': screenshot_path,
+                    'callback': review_callback
+                })
+            else:
+                # 如果没有GUI回调，记录日志并自动通过
+                logger.warning("⚠️ 未设置GUI回调，人工审核自动通过")
+                return True
+            
+            # 等待用户审核（设置超时）
+            logger.info("⏳ 等待用户完成审核...")
+            if review_event.wait(timeout=300000):  # 5分钟超时
+                if review_result['approved']:
+                    # 如果用户修改了结果，更新ai_result
+                    if review_result['modified_result']:
+                        ai_result.update(review_result['modified_result'])
+                        logger.info("✅ 用户审核通过并修改了AI输出")
+                    else:
+                        logger.info("✅ 用户审核通过，使用原始AI输出")
+                    return True
+                else:
+                    logger.info("❌ 用户拒绝了AI输出，停止执行")
+                    return False
+            else:
+                logger.warning("⚠️ 人工审核超时，停止执行")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ 人工审核处理失败: {e}")
+            return False
+    
+    def set_gui_callback(self, callback):
+        """设置GUI回调函数"""
+        self.gui_callback = callback
+        logger.info("🔧 GUI回调函数已设置")
 
  

@@ -45,9 +45,14 @@ class ControlPanel:
         device_frame.grid(row=0, column=0, sticky="ew", pady=(0, 15))
         device_frame.columnconfigure(1, weight=1)
         
+        # 第一行：设备检测和状态
+        first_row_frame = tk.Frame(device_frame, bg=MODERN_COLORS['bg_secondary'])
+        first_row_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        first_row_frame.columnconfigure(1, weight=1)
+        
         # 检测设备按钮
         self.detect_device_btn = create_icon_button(
-            device_frame,
+            first_row_frame,
             icon="🔍",
             text="检测设备",
             command=self._detect_device,
@@ -56,7 +61,7 @@ class ControlPanel:
         self.detect_device_btn.grid(row=0, column=0, sticky="w", padx=(0, 10))
         
         # 设备状态显示
-        self.device_status_frame = tk.Frame(device_frame, bg=MODERN_COLORS['bg_secondary'])
+        self.device_status_frame = tk.Frame(first_row_frame, bg=MODERN_COLORS['bg_secondary'])
         self.device_status_frame.grid(row=0, column=1, sticky="ew")
         
         # 状态指示器
@@ -78,6 +83,13 @@ class ControlPanel:
             bg=MODERN_COLORS['bg_secondary']
         )
         self.device_status_label.pack(side="left")
+        
+        # 第二行：人工接管开关
+        second_row_frame = tk.Frame(device_frame, bg=MODERN_COLORS['bg_secondary'])
+        second_row_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+        
+        # 人工接管开关
+        self._create_intervention_switch(second_row_frame)
     
     def _create_single_task_section(self):
         """创建现代化单个任务执行区域"""
@@ -153,6 +165,88 @@ class ControlPanel:
         self.gui_app.execute_button = self.execute_btn
         self.gui_app.intervention_button = self.intervention_btn
         self.gui_app.interrupt_button = self.interrupt_btn
+        
+    def _create_intervention_switch(self, parent):
+        """创建人工接管开关"""
+        # 开关容器
+        switch_frame = tk.Frame(parent, bg=MODERN_COLORS['bg_secondary'])
+        switch_frame.pack(fill="x", pady=(5, 0))
+        
+        # 图标和标签
+        tk.Label(
+            switch_frame,
+            text="🛠️",
+            font=("Arial", 14),
+            bg=MODERN_COLORS['bg_secondary'],
+            fg=MODERN_COLORS['primary']
+        ).pack(side="left", padx=(0, 8))
+        
+        tk.Label(
+            switch_frame,
+            text="人工接管模式:",
+            font=("Arial", 10, "bold"),
+            bg=MODERN_COLORS['bg_secondary'],
+            fg=MODERN_COLORS['dark']
+        ).pack(side="left", padx=(0, 10))
+        
+        # 人工接管开关
+        self.gui_app.manual_intervention_enabled = tk.BooleanVar(value=False)
+        self.intervention_switch = tk.Checkbutton(
+            switch_frame,
+            text="启用人工审批",
+            variable=self.gui_app.manual_intervention_enabled,
+            command=self._on_intervention_switch_changed,
+            font=("Arial", 10),
+            bg=MODERN_COLORS['bg_secondary'],
+            fg=MODERN_COLORS['dark'],
+            selectcolor=MODERN_COLORS['white'],
+            activebackground=MODERN_COLORS['bg_secondary']
+        )
+        self.intervention_switch.pack(side="left", padx=(0, 15))
+        
+        # 状态指示
+        self.intervention_status_label = tk.Label(
+            switch_frame,
+            text="已禁用",
+            font=("Arial", 9),
+            fg=MODERN_COLORS['dark_gray'],
+            bg=MODERN_COLORS['bg_secondary']
+        )
+        self.intervention_status_label.pack(side="left")
+        
+        # 说明文本
+        info_frame = tk.Frame(parent, bg=MODERN_COLORS['bg_secondary'])
+        info_frame.pack(fill="x", pady=(5, 0))
+        
+        info_label = tk.Label(
+            info_frame,
+            text="💡 启用后，AI的每次输出都需要人工审批才能执行",
+            font=("Arial", 9),
+            fg=MODERN_COLORS['dark_gray'],
+            bg=MODERN_COLORS['bg_secondary']
+        )
+        info_label.pack(anchor="w", padx=(22, 0))
+        
+    def _on_intervention_switch_changed(self):
+        """人工接管开关状态改变时的处理"""
+        enabled = self.gui_app.manual_intervention_enabled.get()
+        
+        if enabled:
+            self.intervention_status_label.config(
+                text="已启用",
+                fg=MODERN_COLORS['success']
+            )
+            self.gui_app._log_output("🛠️ 人工接管模式已启用 - AI输出将需要人工审批")
+        else:
+            self.intervention_status_label.config(
+                text="已禁用",
+                fg=MODERN_COLORS['dark_gray']
+            )
+            self.gui_app._log_output("🤖 人工接管模式已禁用 - AI将自动执行操作")
+            
+        # 通知任务管理器更新设置
+        if hasattr(self.gui_app, 'task_manager'):
+            self.gui_app.task_manager.set_manual_intervention(enabled)
     
     def _create_batch_task_section(self):
         """创建现代化批量任务执行区域"""
@@ -495,7 +589,7 @@ class ControlPanel:
         """取消全选所有sheets"""
         for var in self.gui_app.sheet_vars.values():
             var.set(False)
-        self.gui_app._log_output("")
+        self.gui_app._log_output("❌ 已取消全选所有Sheets")
     
 
     
@@ -534,7 +628,7 @@ class ControlPanel:
     def _show_intervention_dialog(self, current_step):
         """显示人工介入对话框"""
         try:
-            from .intervention_dialog import show_intervention_dialog
+            from ..dialogs.intervention_dialog import InterventionDialog
             
             # 先设置人工介入状态，让任务执行器进入等待状态
             if (hasattr(self.gui_app, 'task_manager') and 
@@ -547,19 +641,44 @@ class ControlPanel:
                 import threading
                 executor.intervention_event = threading.Event()
                 
-                # 显示对话框
-                result = show_intervention_dialog(self.gui_app.root, current_step)
+                # 创建并显示对话框
+                def on_intervention_complete(approved, intervention_prompt=None, restart_step=None):
+                    if approved:
+                        # 完成人工介入
+                        executor.complete_manual_intervention(
+                            intervention_prompt or "",
+                            restart_step or current_step
+                        )
+                        messagebox.showinfo("成功", "人工介入完成，任务将继续执行！")
+                    else:
+                        # 用户取消了人工介入
+                        self._cancel_manual_intervention()
                 
-                if result:
-                    # 完成人工介入（新的对话框已包含确认流程）
-                    executor.complete_manual_intervention(
-                        result['intervention_prompt'],
-                        result['restart_step']
-                    )
-                    messagebox.showinfo("成功", "人工介入完成，任务将继续执行！")
+                # 构造AI结果数据
+                ai_result = {
+                    'observation': f"当前执行到第 {current_step} 步，需要人工介入",
+                    'plan': {
+                        'description': '人工介入操作',
+                        'type': 'Manual',
+                        'coordinate': [0, 0]
+                    },
+                    'completed': False
+                }
+                
+                dialog = InterventionDialog(
+                    parent=self.gui_app.root,
+                    ai_result=ai_result,
+                    screenshot_path=None,
+                    main_app=self.gui_app
+                )
+                
+                # 显示对话框并获取结果
+                approved, result = dialog.show()
+                if approved:
+                    on_intervention_complete(True, "人工介入完成", current_step)
                 else:
-                    # 用户取消了人工介入
-                    self._cancel_manual_intervention()
+                    on_intervention_complete(False)
+                
             else:
                 messagebox.showerror("错误", "任务执行器未初始化！")
             
@@ -567,6 +686,39 @@ class ControlPanel:
             messagebox.showerror("错误", f"无法加载人工介入对话框: {e}")
         except Exception as e:
             messagebox.showerror("错误", f"显示人工介入对话框失败: {e}")
+    
+    def show_intervention_dialog(self, ai_result, step, screenshot_path, callback):
+        """显示人工接管对话框"""
+        try:
+            from ..dialogs.intervention_dialog import InterventionDialog
+            dialog = InterventionDialog(
+                parent=self.gui_app.root,
+                ai_result=ai_result,
+                screenshot_path=screenshot_path,
+                main_app=self.gui_app
+            )
+            dialog_result = dialog.show()
+            
+            # 检查返回结果是否有效
+            if dialog_result is None:
+                print(f"❌ 对话框返回结果为 None")
+                callback(True, None)
+                return
+            
+            if not isinstance(dialog_result, (tuple, list)) or len(dialog_result) != 2:
+                print(f"❌ 对话框返回结果格式无效: {dialog_result} (类型: {type(dialog_result)})")
+                callback(True, None)
+                return
+                
+            approved, result = dialog_result
+            # 传递修改后的结果给回调函数
+            callback(approved, result if approved and result else None)
+        except Exception as e:
+            print(f"❌ 显示人工接管对话框失败: {e}")
+            import traceback
+            traceback.print_exc()
+            # 出错时自动通过
+            callback(True, None)
     
     def _cancel_manual_intervention(self):
         """取消人工介入"""

@@ -1,0 +1,29 @@
+---
+globs: app/dialogs/*.py,app/components/*.py
+---
+# GUI布局和样式指南
+
+## 通用布局原则
+1. 不使用滚动条，除非内容确实超出显示范围
+2. 使用grid布局时正确设置权重：
+   ```python
+   content_frame.columnconfigure(0, weight=3)  # 左侧面板
+   content_frame.columnconfigure(1, weight=2)  # 右侧面板
+   ```
+
+## 字体和间距
+1. 标题：("Microsoft YaHei UI", 12, "bold")
+2. 正文：("Arial", 9)
+3. 标签：("Arial", 9, "bold")
+4. 内边距：padx=10, pady=3
+
+## 颜色方案
+使用MODERN_COLORS定义的颜色：
+- bg_primary: 主背景色
+- primary: 主要文字
+- dark: 深色文字
+- white: 输入框背景---
+description:
+globs:
+alwaysApply: false
+---

@@ -306,7 +306,7 @@ class Config:
     }}
 }}"""
     
-    def get_analysis_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None) -> str:
+    def get_analysis_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> str:
         """获取分析用的用户提示词
         
         Args:
@@ -315,22 +315,33 @@ class Config:
             current_step: 当前步骤数
             history_steps: 历史步骤列表
             intervention_prompt: 人工介入的补充说明
+            restart_from_step: 从哪一步重新开始（用于插入人工介入）
         """
         
-        # 构建历史步骤信息
+        # 构建历史步骤信息，并在适当位置插入人工介入
         history_text = ""
         if history_steps and len(history_steps) > 0:
             history_text = "\n=== 执行历史 ===\n"
+            
             for i, step_info in enumerate(history_steps, 1):
                 step_desc = step_info.get('description', '未知操作')
                 step_type = step_info.get('type', '未知类型')
                 step_obs = step_info.get('observation', '')
-                history_text += f"步骤{i}: 手机界面状态为：{step_obs}；执行了: {step_desc} ;类型: {step_type})\n"
+                step_number = step_info.get('step', i)  # 使用记录中的步骤号，如果没有则使用索引
+                
+                history_text += f"步骤{step_number}: 手机界面状态为：{step_obs}；执行了: {step_desc} ;类型: {step_type})\n"
+                
+                # 在重新开始的步骤后插入人工介入指导
+                if (intervention_prompt and intervention_prompt.strip() and 
+                    restart_from_step is not None and step_number == restart_from_step-1):
+                    history_text += f"\n【人工介入指导】在第{restart_from_step}步后补充指导：{intervention_prompt.strip()}，请重点参考\n\n"
+            
             history_text += "\n根据以上执行历史，请分析当前界面状态并决定下一步操作。如果上一步执行完任务了，请判断了任务完成。\n"
         
-        # 构建人工介入补充信息
+        # 如果没有历史记录但有人工介入，单独显示
         intervention_text = ""
-        if intervention_prompt and intervention_prompt.strip():
+        if (intervention_prompt and intervention_prompt.strip() and 
+            (not history_steps or restart_from_step is None)):
             intervention_text = f"\n=== 人工介入指导 ===\n重要提示：{intervention_prompt.strip()}\n请特别注意上述人工指导，并根据指导内容调整后续操作策略。\n"
         
         return f"""

@@ -26,7 +26,7 @@ class AIAnalyzer:
         # 显示当前模型配置
         config.print_model_config()
     
-    def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None, intervention_prompt: str = None) -> dict:
+    def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> dict:
         """分析当前屏幕状态并提供操作建议
         
         Args:
@@ -36,10 +36,15 @@ class AIAnalyzer:
             screenshot_path: 截图路径
             history_steps: 历史步骤
             intervention_prompt: 人工介入的补充说明
+            restart_from_step: 从哪一步重新开始（用于插入人工介入）
         """
         # 读取XML内容
         with open(xml_path, "r", encoding="utf-8") as f:
             xml_content = f.read()
+        
+        # 精简XML内容，减少冗余信息
+        # from .xml_simplifier import xml_simplifier
+        # simplified_xml = xml_simplifier.simplify_xml(xml_content)
         
         # 如果提供了截图且启用了多模态增强，使用多模态增强
         enhanced_content = xml_content
@@ -57,7 +62,7 @@ class AIAnalyzer:
                     raise
         
         # 构建提示词
-        user_prompt = self._build_prompt(query, enhanced_content, current_step, history_steps, intervention_prompt)
+        user_prompt = self._build_prompt(query, enhanced_content, current_step, history_steps, intervention_prompt, restart_from_step)
         
         # 调用AI模型，添加稳定输出参数
         max_retries = 3
@@ -94,7 +99,7 @@ class AIAnalyzer:
         # 解析AI响应（如果失败会直接抛出异常）
         return self._parse_response(result)
     
-    def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None) -> str:
+    def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> str:
         """构建 AI提示词
         
         Args:
@@ -103,8 +108,9 @@ class AIAnalyzer:
             current_step: 当前步骤
             history_steps: 历史步骤
             intervention_prompt: 人工介入的补充说明
+            restart_from_step: 从哪一步重新开始（用于插入人工介入）
         """
-        return config.get_analysis_prompt(query, xml_content, current_step, history_steps, intervention_prompt)
+        return config.get_analysis_prompt(query, xml_content, current_step, history_steps, intervention_prompt, restart_from_step)
     
     def _parse_response(self, response: str) -> dict:
         """解析AI响应"""
@@ -224,17 +230,17 @@ class AIAnalyzer:
         
         if "plan" not in json_obj or not isinstance(json_obj["plan"], dict):
             json_obj["plan"] = self._get_default_plan()
-        else:
-            # 修复plan字段
-            plan = json_obj["plan"]
-            if "description" not in plan:
-                plan["description"] = "继续操作"
-            if "type" not in plan:
-                plan["type"] = "Manual"
-            if "position" not in plan:
-                plan["position"] = [540, 1200]
-            if "box" not in plan:
-                plan["box"] = [[515, 1180], [565, 1220]]
+        # else:
+        #     # 修复plan字段
+        #     plan = json_obj["plan"]
+        #     if "description" not in plan:
+        #         plan["description"] = "继续操作"
+        #     if "type" not in plan:
+        #         plan["type"] = "Manual"
+        #     if "position" not in plan:
+        #         plan["position"] = [540, 1200]
+        #     if "box" not in plan:
+        #         plan["box"] = [[515, 1180], [565, 1220]]
         
         logger.info(f"✅ AI分析成功: {json_obj['observation']}")
         return json_obj

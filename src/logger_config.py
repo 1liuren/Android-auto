@@ -205,9 +205,9 @@ def init_default_logger(enable_gui: bool = False):
         log_file = None
     
     # 设置日志
-    setup_logger(log_level="INFO", log_file=log_file, enable_gui=enable_gui)
+    setup_logger(log_level="DEBUG", log_file=log_file, enable_gui=enable_gui)
     
     return get_logger("phone_auto")
 
 # 自动初始化（开发环境用）
-default_logger = init_default_logger(enable_gui=False) 
+default_logger = init_default_logger(enable_gui=False)
