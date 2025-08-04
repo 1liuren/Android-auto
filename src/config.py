@@ -147,13 +147,12 @@ class Config:
 
 **重要提示：**
 - 打开应用优先使用Open操作（通过包名启动）
-- 点击功能按钮后页面跳转成功即完成任务
-- 基于XML的bounds属性计算精确坐标：position = [(x1+x2)/2, (y1+y2)/2]
-- 优先选择clickable="true"的元素
+- 遇到广告页面，优先判断为等待操作
 - 如果任务已完成，将type设置为"End"，description设置为"任务已完成"
-- 在订票等任务中，一般出发地为页面左边，目的地为页面右边，在选择出发地和目的地的搜索栏中，搜索栏中的提示文本可能都是“请输入目的城市/车站名”，这个不能作为判断当前是在选择出发地还是目的地的依据
-- 在xml信息中可能有当前页面隐藏的元素，需要上下滑动来查看，可以重点参考QwenVL提取的界面文本信息
 - 文本输入：如果页面中没有com.github.uiautomator或者Switch IME的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
+- 滑动和拖动操作注意方向，需要寻找的元素在上方时，需要向下滑动，其他方向同理
+- 滑动和拖动操作注意bbox，起始点和结束点需要再bbox范围内
+- 滑动的拖动操作前并不需要激活点击操作，直接滑动即可
 
 **隐私保护检测：**
 在分析界面时，请同时检测是否存在需要隐私保护的敏感信息：
@@ -164,14 +163,13 @@ class Config:
    - 地址：检测包含“地址”、“收货地址”、“居住地”等关键词的文本，区分省市区（如“北京市海淀区”）与具体街道、楼栋、单元等详细信息。
 
 2. **隐私信息替换规则：**
-   - 手机号码：生成可替换的虚假号码，替换后的虚假号码与原号码长度一致，并且前三位号码保持不变，后八位号码用随机常见数字替换，不能使用"*"号、XX等代替。
    - 姓名：生成可替换的虚假姓名，要求姓氏保持不变，名字部分用与原名长度一致的随机常见汉字替换，保证姓名结构合理，不能使用"*"号、某某、XX等代替。
    - 地址：省、市、区级别（如“北京市海淀区”）无需替换，街道、居住地等具体信息（如“中关村东升科技园A栋4单元”）需要用与原文字长度一致的合理伪造文本替换，伪造内容应为真实存在的街道、园区、楼栋等名称，保持格式和长度一致，不能使用"*"号、某某、XX等代替。
 3. **隐私检测输出：**
    - 如果检测到隐私信息，在返回结果中包含privacy_detection字段，结构如下：
-     - phone_numbers: 手机号原始文本和bounds
-     - names: 姓名原始文本、bounds、替换后的虚假姓名
-     - addresses: 地址原始文本、bounds、替换后的虚假地址
+     - phone_numbers: 手机号原始文本和bbox
+     - names: 姓名原始文本、bbox、替换后的虚假姓名
+     - addresses: 地址原始文本、bbox、替换后的虚假地址
    - 如果没有检测到敏感信息，不输出privacy_detection字段
 
 
@@ -184,20 +182,20 @@ class Config:
         "phone_numbers": [
             {{
                 "phone_number": "手机号码原始文本",
-                "bounds": "元素的bounds属性值"
+                "bbox": "<bbox>x1 y1 x2 y2</bbox>"
             }}
         ],
         "names": [
             {{
                 "name": "姓名原始文本",
-                "bounds": "元素的bounds属性值",
+                "bbox": "<bbox>x1 y1 x2 y2</bbox>",
                 "replacement": "伪造姓名"
             }}
         ],
         "addresses": [
             {{
                 "address": "地址原始文本",
-                "bounds": "元素的bounds属性值",
+                "bbox": "<bbox>x1 y1 x2 y2</bbox>",
                 "replacement": "伪造地址"
             }}
         ]
@@ -205,16 +203,16 @@ class Config:
     "plan": {{
         "description": "操作描述",
         "type": "操作类型(Open/touch/long_touch/input/scroll/drag/wait/End)",
-        "position": [x, y],
-        "box": [[x1, y1], [x2, y2]],
+        "position": "<point>x y</point>",
+        "box": "<bbox>x1 y1 x2 y2</bbox>",
         "times": 1,
         "text": "输入文本（input操作时需要）",
         "app": "应用名称（Open操作时需要）",
         "package": "应用包名（Open操作时需要）",
-        "start_position": [x, y],
-        "stop_position": [x, y],
-        "duration": 0.5,
-        "wait_time": 3,
+        "start_position": "<point>x y</point>",
+        "stop_position": "<point>x y</point>",
+        "duration": 在scroll/drag操作时需要,
+        "wait_time": 在wait操作时需要,
         "wait_reason": "等待原因（wait操作时需要）"
     }}
 }}"""

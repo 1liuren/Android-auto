@@ -16,8 +16,6 @@ from .logger_config import get_logger
 from .prompt import MOBILE_USE_DOUBAO
 import base64
 # from volcenginesdkarkruntime import Ark
-from PIL import Image, ImageDraw
-import matplotlib.pyplot as plt
 import math
 from openai import OpenAI
 
@@ -34,7 +32,7 @@ class AIAnalyzer:
         # self.client = Ark(
         #     api_key=config.ark_api_key,
         # )
-        api_key = "b2343050-267b-4913-8365-eb1c5251ea3d"
+        api_key = config.ark_api_key
         self.client = OpenAI(
             base_url="https://ark.cn-beijing.volces.com/api/v3",
             api_key=api_key,
@@ -118,7 +116,8 @@ class AIAnalyzer:
                 else:
                     result = response.output.choices[0].message.content
                 # result = response.output.choices[0].message.content
-                logger.info(f"🤖 AI原始响应长度: {len(result)} 字符")
+                logger.debug(f"🤖 AI原始响应: {result} ")
+                logger.debug(f"🤖 AI原始响应: {response.choices[0].message.reasoning_content}")
                 break
             except Exception as e:
                 retry_count += 1
@@ -128,7 +127,6 @@ class AIAnalyzer:
                     raise
         
         # 解析AI响应（如果失败会直接抛出异常）
-        print(result)
         return self._parse_response(result)
     
     def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> str:
@@ -148,15 +146,11 @@ class AIAnalyzer:
     def _parse_response(self, response: str) -> dict:
         """解析AI响应"""
         # 清理响应文本
-        cleaned_response = self._clean_response(response)
+        cleaned_response = self._clean_response(response, config.default_screen_resolution)
         
         # 提取第一个完整的JSON对象
         json_obj = self._extract_first_valid_json(cleaned_response)
-        # 转换坐标
-        json_obj["plan"]["position"] = self.position_convert(json_obj["plan"]["position"], config.default_screen_resolution) if json_obj["plan"]["position"] else None
-        json_obj["plan"]["box"] = self.box_convert(json_obj["plan"]["box"], config.default_screen_resolution) if json_obj["plan"]["box"] else None
-        json_obj["plan"]["start_position"] = self.position_convert(json_obj["plan"]["start_position"], config.default_screen_resolution) if json_obj["plan"]["start_position"] else None
-        json_obj["plan"]["stop_position"] = self.position_convert(json_obj["plan"]["stop_position"], config.default_screen_resolution) if json_obj["plan"]["stop_position"] else None
+
 
         if json_obj:
             # 验证和修复必要字段
@@ -164,260 +158,58 @@ class AIAnalyzer:
         else:
             # 直接抛出异常，不使用备用方案
             raise ValueError(f"无法解析AI响应为有效JSON格式。响应内容: {response[:200]}...")
+
     
-    def _parse_doubao_response(self, response: str) -> dict:
-        """解析AI响应"""
-        parsed_output = json.loads(parse_action_output(response))
-        print(parsed_output)
-
-        # 转换坐标
-        parsed_output["start_box"] = self.box_convert(parsed_output["start_box"], config.default_screen_resolution) if parsed_output["start_box"] else None
-        parsed_output["end_box"] = self.box_convert(parsed_output["end_box"], config.default_screen_resolution) if parsed_output["end_box"] else None
-        return parsed_output
-
-    def parse_action_output(self, output_text):
-        # 提取Thought部分
-        thought_match = re.search(r'Thought:(.*?)\nAction:', output_text, re.DOTALL)
-        thought = thought_match.group(1).strip() if thought_match else ""
-
-        # 提取Action部分
-        action_match = re.search(r'Action:(.*?)(?:\n|$)', output_text, re.DOTALL)
-        action_text = action_match.group(1).strip() if action_match else ""
-
-        # 初始化结果字典
-        result = {
-            "thought": thought,
-            "action": "",
-            "key": None,
-            "content": None,
-            "start_box": None,
-            "end_box": None,
-            "direction": None
-        }
-
-        if not action_text:
-            return json.dumps(result, ensure_ascii=False)
-
-        # 解析action类型
-        action_parts = action_text.split('(')
-        action_type = action_parts[0]
-        result["action"] = action_type
-
-        # 解析参数
-        if len(action_parts) > 1:
-            params_text = action_parts[1].rstrip(')')
-            params = {}
-
-            # 处理键值对参数
-            for param in params_text.split(','):
-                param = param.strip()
-                if '=' in param:
-                    key, value = param.split('=', 1)
-                    key = key.strip()
-                    value = value.strip().strip('\'"')
-
-                    # 处理bbox格式
-                    if 'box' in key:
-                        # 提取坐标数字
-                        numbers = re.findall(r'\d+', value)
-                        if numbers:
-                            coords = [int(num) for num in numbers]
-                            if len(coords) == 4:
-                                if key == 'start_box':
-                                    result["start_box"] = coords
-                                elif key == 'end_box':
-                                    result["end_box"] = coords
-                    elif key == 'key':
-                        result["key"] = value
-                    elif key == 'content':
-                        # 处理转义字符
-                        value = value.replace('\\n', '\n').replace('\\"', '"').replace("\\'", "'")
-                        result["content"] = value
-                    elif key == 'direction':
-                        result["direction"] = value
-
-        return json.dumps(result, ensure_ascii=False, indent=2)
-
-    def box_convert(self, relative_bbox, img_size):
+    def _clean_response(self, response: str, img_size: tuple) -> str:
         """
-        将相对坐标[0,1000]转换为图片上的绝对像素坐标
-
-        参数:
-            relative_bbox: 相对坐标列表/元组 [x1, y1, x2, y2] (范围0-1000)
-            img_size: 图片尺寸元组 (width, height)
-
-        返回:
-            绝对坐标列表 [x1, y1, x2, y2] (单位:像素)
-
-        示例:
-            >>> coordinates_convert([500, 500, 600, 600], (1000, 2000))
-            [500, 1000, 600, 1200]  # 对于2000高度的图片，y坐标×2
+        清理AI响应文本，将包含坐标的自定义标签转换为JSON数组，并进行坐标转换。
+        
+        Args:
+            response: AI响应的原始文本。
+            img_size: 图片尺寸元组 (width, height)，用于坐标转换。
+            
+        Returns:
+            处理和转换后的响应字符串。
         """
-        # 参数校验
-        # if len(relative_bbox) != 4 or len(img_size) != 2:
-        #     raise ValueError("输入参数格式应为: relative_bbox=[x1,y1,x2,y2], img_size=(width,height)")
-
-        # 解包图片尺寸
+        response = re.sub(r'```json\s*|```\s*', '', response).strip()
         img_width, img_height = img_size
 
-        # 计算绝对坐标
-        abs_x1 = int(relative_bbox[0][0] * img_width / 1000)
-        abs_y1 = int(relative_bbox[0][1] * img_height / 1000)
-        abs_x2 = int(relative_bbox[1][0] * img_width / 1000)
-        abs_y2 = int(relative_bbox[1][1] * img_height / 1000)
+        def convert_bbox(match):
+            coords = match.group(1).strip().split()
+            if len(coords) == 4:
+                x1, y1, x2, y2 = map(int, coords)
+                rel_x1 = int(x1 * img_width / 1000)
+                rel_y1 = int(y1 * img_height / 1000)
+                rel_x2 = int(x2 * img_width / 1000)
+                rel_y2 = int(y2 * img_height / 1000)
+                return json.dumps([[rel_x1, rel_y1], [rel_x2, rel_y2]])
+            return match.group(0)
 
-        return [[abs_x1, abs_y1], [abs_x2, abs_y2]]
+        def convert_point(match):
+            coords = match.group(1).strip().split()
+            if len(coords) == 2:
+                x, y = map(int, coords)
+                rel_x = int(x * img_width / 1000)
+                rel_y = int(y * img_height / 1000)
+                return json.dumps([rel_x, rel_y])
+            return match.group(0)
 
-    def position_convert(self, position, img_size):
-        """
-        将相对坐标[0,1000]转换为图片上的绝对像素坐标
-
-        参数:
-            position: 相对坐标列表/元组 [x, y] (范围0-1000)
-            img_size: 图片尺寸元组 (width, height)
-
-        返回:
-            绝对坐标列表 [x1, y1, x2, y2] (单位:像素)
-
-        示例:
-            >>> coordinates_convert([500, 500, 600, 600], (1000, 2000))
-            [500, 1000, 600, 1200]  # 对于2000高度的图片，y坐标×2
-        """
-        # 参数校验
-        if len(position) != 2 or len(img_size) != 2:
-            raise ValueError("输入参数格式应为: position=[x,y], img_size=(width,height)")
-
-        # 解包图片尺寸
-        img_width, img_height = img_size
-
-        # 计算绝对坐标
-        abs_x = int(position[0] * img_width / 1000)
-        abs_y = int(position[1] * img_height / 1000)
-
-        return [abs_x, abs_y]
-
-    def draw_box_and_show(self, image, start_box=None, end_box=None, direction=None):
-        """
-        在图片上绘制两个边界框和指向箭头
-
-        参数:
-            image: PIL.Image对象或图片路径
-            start_box: 起始框坐标 [x1,y1,x2,y2] (绝对坐标)
-            end_box: 结束框坐标 [x1,y1,x2,y2] (绝对坐标)
-            direction: 操作方向 ('up', 'down', 'left', 'right' 或 None)
-        """
-        box_color = "red"
-        arrow_color = "blue"
-        box_width = 10
-        drag_arrow_length = 150  # drag操作箭头长度
-
-        draw = ImageDraw.Draw(image)
-
-        # 绘制起始框
-        if start_box is not None:
-            draw.rectangle(start_box, outline=box_color, width=box_width)
-
-        # 绘制结束框
-        if end_box is not None:
-            draw.rectangle(end_box, outline=box_color, width=box_width)
-
-        # 处理不同类型的操作
-        if start_box is not None:
-            start_center = ((start_box[0] + start_box[2]) / 2, (start_box[1] + start_box[3]) / 2)
-
-            if end_box is not None:
-                # 绘制两个框之间的连接线和箭头
-                end_center = ((end_box[0] + end_box[2]) / 2, (end_box[1] + end_box[3]) / 2)
-                draw.line([start_center, end_center], fill=arrow_color, width=box_width)
-                draw_arrow_head(draw, start_center, end_center, arrow_color, box_width * 3)
-            elif direction is not None:
-                # 处理drag操作（只有start_box和direction）
-                end_point = calculate_drag_endpoint(start_center, direction, drag_arrow_length)
-                draw.line([start_center, end_point], fill=arrow_color, width=box_width)
-                draw_arrow_head(draw, start_center, end_point, arrow_color, box_width * 3)
-
-        # 显示结果图片
-        plt.imshow(image)
-        plt.axis('on')  # 不显示坐标轴
-        plt.show()
-
-    def draw_arrow_head(self, draw, start, end, color, size):
-        """
-        绘制箭头头部
-        """
-        # 计算角度
-        angle = math.atan2(end[1] - start[1], end[0] - start[0])
-
-        # 计算箭头三个点的位置
-        p1 = end
-        p2 = (
-            end[0] - size * math.cos(angle + math.pi / 6),
-            end[1] - size * math.sin(angle + math.pi / 6)
-        )
-        p3 = (
-            end[0] - size * math.cos(angle - math.pi / 6),
-            end[1] - size * math.sin(angle - math.pi / 6)
-        )
-
-        # 绘制箭头
-        draw.polygon([p1, p2, p3], fill=color)
-
-    def calculate_drag_endpoint(self, start_point, direction, length):
-        """
-        计算drag操作的箭头终点
-
-        参数:
-            start_point: 起点坐标 (x, y)
-            direction: 方向 ('up', 'down', 'left', 'right')
-            length: 箭头长度
-
-        返回:
-            终点坐标 (x, y)
-        """
-        x, y = start_point
-        if direction == 'up':
-            return (x, y - length)
-        elif direction == 'down':
-            return (x, y + length)
-        elif direction == 'left':
-            return (x - length, y)
-        elif direction == 'right':
-            return (x + length, y)
-        else:
-            return (x, y)  # 默认不移动
-    
-    def _clean_response(self, response: str) -> str:
-        """清理AI响应文本"""
-        # 移除markdown代码块标记
-        response = re.sub(r'```json\s*', '', response)
-        response = re.sub(r'```\s*', '', response)
+        # 使用 re.sub 和替换函数来处理坐标
+        response = re.sub(r'"<bbox>(.*?)</bbox>"', convert_bbox, response)
+        response = re.sub(r'"<point>(.*?)</point>"', convert_point, response)
         
-        # 移除多余的空白字符
-        response = response.strip()
-        
-        return response
+        return response.strip()
     
     def _extract_first_valid_json(self, text: str) -> dict:
         """提取第一个有效的JSON对象"""
-        # 尝试多种JSON提取策略
-        strategies = [
-            # 策略1: 查找第一个完整的JSON对象
-            self._find_complete_json_object,
-            # 策略2: 使用正则表达式提取
-            self._regex_extract_json,
-            # 策略3: 逐行解析
-            self._line_by_line_parse
-        ]
         
-        for i, strategy in enumerate(strategies, 1):
-            try:
-                result = strategy(text)
-                if result and isinstance(result, dict):
-                    logger.debug(f"✅ JSON解析成功，使用策略{i}")
-                    return result
-            except Exception as e:
-                logger.warning(f"⚠️  策略{i}解析失败: {e}")
-                continue
+        try:
+            result = self._find_complete_json_object(text)
+            if result and isinstance(result, dict):
+                logger.debug(f"✅ JSON解析成功")
+                return result
+        except Exception as e:
+            logger.warning(f"⚠️  JSON解析失败: {e}")
         
         # 所有策略都失败，返回None
         return None
@@ -441,39 +233,7 @@ class AIAnalyzer:
         
         return None
     
-    def _regex_extract_json(self, text: str) -> dict:
-        """使用正则表达式提取JSON"""
-        # 查找第一个JSON对象
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group()
-            return json.loads(json_str)
-        return None
     
-    def _line_by_line_parse(self, text: str) -> dict:
-        """逐行解析，适用于格式化的JSON"""
-        lines = text.split('\n')
-        json_lines = []
-        in_json = False
-        brace_count = 0
-        
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith('{'):
-                in_json = True
-                brace_count += stripped.count('{') - stripped.count('}')
-                json_lines.append(line)
-            elif in_json:
-                brace_count += stripped.count('{') - stripped.count('}')
-                json_lines.append(line)
-                if brace_count <= 0:
-                    break
-        
-        if json_lines:
-            json_str = '\n'.join(json_lines)
-            return json.loads(json_str)
-        
-        return None
     
     def _validate_and_fix_response(self, json_obj: dict) -> dict:
         """验证和修复AI响应"""
@@ -487,31 +247,10 @@ class AIAnalyzer:
         if "completion_reason" not in json_obj:
             json_obj["completion_reason"] = ""
         
-        if "plan" not in json_obj or not isinstance(json_obj["plan"], dict):
-            json_obj["plan"] = self._get_default_plan()
-        # else:
-        #     # 修复plan字段
-        #     plan = json_obj["plan"]
-        #     if "description" not in plan:
-        #         plan["description"] = "继续操作"
-        #     if "type" not in plan:
-        #         plan["type"] = "Manual"
-        #     if "position" not in plan:
-        #         plan["position"] = [540, 1200]
-        #     if "box" not in plan:
-        #         plan["box"] = [[515, 1180], [565, 1220]]
         
         logger.info(f"✅ AI分析成功: {json_obj['observation']}")
         return json_obj
     
-    def _get_default_plan(self) -> dict:
-        """获取默认操作计划"""
-        return {
-            "description": "请手动操作",
-            "type": "Manual",
-            "position": [540, 1200],
-            "box": [[515, 1180], [565, 1220]]
-        }
     
     def _enhance_with_qwenvl_html(self, xml_content: str, screenshot_path: str) -> str:
         """使用QwenVL HTML提取文本信息并增强XML"""

@@ -120,12 +120,12 @@ class ConfigPanel:
         model_combo = ttk.Combobox(
             ai_frame, 
             textvariable=self.gui_app.model_name_var,
-            values=["deepseek-r1", "qwen-plus-latest", "qwen-max-latest"],
+            values=["doubao-1-5-thinking-vision-pro-250428"],
             state="readonly",
             width=20
         )
         model_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(5, 5))
-        model_combo.set("deepseek-r1")  # 设置默认值
+        model_combo.set("doubao-1-5-thinking-vision-pro-250428")  # 设置默认值
         
         # 最大执行次数
         ttk.Label(ai_frame, text="最大执行次数:").grid(row=2, column=0, sticky="w", pady=(5, 0))

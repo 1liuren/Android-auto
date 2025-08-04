@@ -81,7 +81,7 @@ class TaskManager:
             # 同步前端配置到后端config
             api_key = self.gui_app.api_key_var.get()
             if api_key:
-                config.dashscope_api_key = api_key
+                config.ark_api_key = api_key
                 self.logger.info("🔑 API Key已从前端同步到后端")
             else:
                 self.logger.warning("⚠️ 前端未配置API Key")

@@ -822,8 +822,8 @@ class TaskExecutor:
         
         for data_item in data_list:
             # 解析bounds字符串
-            bounds_str = data_item.get("bounds", "")
-            bbox = self._parse_bounds_string(bounds_str)
+            bbox = data_item.get("bbox", "")
+            # bbox = self._parse_bounds_string(bounds_str)
             
             if bbox:
                 if data_type == "phone_numbers":

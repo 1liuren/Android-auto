@@ -22,7 +22,7 @@ class GUIConfig:
             "output_dir": "output",
             "batch_output_dir": "batch_output",
             "api_key": "",
-            "model_name": "deepseek-r1",
+            "model_name": "doubao-1-5-thinking-vision-pro-250428",
             "max_execution_times": 50,
             "privacy_enabled": True,
             "multimodal_enabled": False,
