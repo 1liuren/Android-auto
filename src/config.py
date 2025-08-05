@@ -19,6 +19,7 @@ class Config:
         self.ark_api_key = os.getenv("ARK_API_KEY")
         
         # 模型配置  qwen-max-latest、deepseek-r1、qwen-plus-latest、doubao-1-5-pro-32k-250115
+        # 模型配置 doubao-1-5-ui-tars-250428，doubao-1-5-thinking-vision-pro-250428
         self.model_name = "doubao-1-5-thinking-vision-pro-250428"  # 默认模型
         
         # 模型参数配置
@@ -138,7 +139,7 @@ class Config:
    - package: 应用包名（仅在Open操作时需要，用于直接启动应用）
    - start_position: 滑动/拖动起始位置坐标（仅在scroll/drag操作时需要）
    - stop_position: 滑动/拖动结束位置坐标（仅在scroll/drag操作时需要）
-   - duration: 滑动/拖动持续时间，单位秒（仅在scroll/drag操作时需要，默认0.5）
+   - duration: 长按持续时间，单位秒（仅在long_touch操作时需要，默认0.5）
    - wait_time: 等待时长，单位秒（仅在wait操作时需要）
    - wait_reason: 等待原因（仅在wait操作时需要，如"广告播放"、"页面加载"等）
 
@@ -149,16 +150,14 @@ class Config:
 - 打开应用优先使用Open操作（通过包名启动）
 - 遇到广告页面，优先判断为等待操作
 - 如果任务已完成，将type设置为"End"，description设置为"任务已完成"
-- 文本输入：如果页面中没有com.github.uiautomator或者Switch IME的元素，说明当前页面并不可输入文字，需要先touch点击输入框激活
-- 滑动和拖动操作注意方向，需要寻找的元素在上方时，需要向下滑动，其他方向同理
-- 滑动和拖动操作注意bbox，起始点和结束点需要再bbox范围内
+- 滑动和拖动操作注意bbox，起始点和结束点需要再bbox范围内，不要超出bbox范围
 - 滑动的拖动操作前并不需要激活点击操作，直接滑动即可
 
 **隐私保护检测：**
 在分析界面时，请同时检测是否存在需要隐私保护的敏感信息：
 
 1. **隐私信息检测规则：**
-   - 手机号码：识别11位中国大陆手机号（1开头），重点关注EditText输入框、TextView显示文本等元素。
+   - 手机号码：识别11位中国大陆手机号（1开头）。
    - 姓名：检测常见中文姓名，优先关注“姓名”、“联系人”等字段，或明显为人名的文本。
    - 地址：检测包含“地址”、“收货地址”、“居住地”等关键词的文本，区分省市区（如“北京市海淀区”）与具体街道、楼栋、单元等详细信息。
 
@@ -247,7 +246,7 @@ class Config:
                     restart_from_step is not None and step_number == restart_from_step-1):
                     history_text += f"\n【人工介入指导】在第{restart_from_step}步后补充指导：{intervention_prompt.strip()}，请重点参考\n\n"
             
-            history_text += "\n根据以上执行历史，请分析当前界面状态并决定下一步操作。如果上一步执行完任务了，请判断了任务完成。\n"
+            history_text += "\n根据以上执行历史，判断下一步动作，并及时的纠正错误操作。\n"
         
         # 如果没有历史记录但有人工介入，单独显示
         intervention_text = ""

@@ -76,13 +76,6 @@ class AIAnalyzer:
             }
         ]
         
-        # 如果有历史步骤，添加到消息列表中
-        # if history_steps:
-        #     for step in history_steps:
-        #         messages.append({
-        #             "role": "assistant",
-        #             "content": f"{step.get('content', '')}"
-        #         })
         
         # 添加当前图片消息
         messages.append({
@@ -111,7 +104,7 @@ class AIAnalyzer:
                 
                 if config.model_name in ['qwen-max', 'qwen-plus', 'qwen-plus-latest', 'qwen-max-latest']:
                     result = response.output.text
-                elif config.model_name in ['doubao-1-5-thinking-vision-pro-250428']:
+                elif config.model_name in ['doubao-1-5-thinking-vision-pro-250428', 'doubao-1-5-ui-tars-250428']:
                     result = response.choices[0].message.content
                 else:
                     result = response.output.choices[0].message.content
@@ -151,6 +144,11 @@ class AIAnalyzer:
         # 提取第一个完整的JSON对象
         json_obj = self._extract_first_valid_json(cleaned_response)
 
+        # 如果存在plan字段且包含start_position和stop_position,则交换它们
+        if json_obj and "plan" in json_obj:
+            plan = json_obj["plan"]
+            if "start_position" in plan and "stop_position" in plan:
+                plan["start_position"], plan["stop_position"] = plan["stop_position"], plan["start_position"]
 
         if json_obj:
             # 验证和修复必要字段
