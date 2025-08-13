@@ -10,8 +10,8 @@
   "excel_file": "验收通过数据/标贝采集需求.xlsx",
   "selected_sheets": [],
   "target_column": "示例query",
-  "window_geometry": "1200x850+2218+80",
-  "last_task": "打开爱奇艺电影",
+  "window_geometry": "1200x850+186+29",
+  "last_task": "帮我点麦当劳",
   "app_packages": {
     "美团外卖": "com.sankuai.meituan.takeoutnew",
     "饿了么": "me.ele",
@@ -19,6 +19,7 @@
     "懂车帝": "com.ss.android.auto",
     "滴滴出行": "com.sdu.didi.psnger",
     "携程": "ctrip.android.view",
-    "抖音": "com.ss.android.ugc.aweme"
+    "抖音": "com.ss.android.ugc.aweme",
+    "支付宝": "com.eg.android.AlipayGphone"
   }
 }

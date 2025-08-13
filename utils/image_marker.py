@@ -62,9 +62,9 @@ class ImageMarker:
                     logger.info(f"✅ 标记{operation_name}位置: ({center_x}, {center_y})")
                 else:
                     logger.warning("⚠️  无法确定操作位置，保存原图")
-            elif normalized_type == "wait" or normalized_type == "open":
-                # 等待操作不需要标记，保存原图
-                logger.info("✅ 等待和打开操作无需标记，保存原图")
+            elif normalized_type in ["wait", "open", "request", "end"]:
+                # 等待、打开和请求操作不需要标记，保存原图
+                logger.info("✅ 等待、打开和请求操作无需标记，保存原图")
             else:
                 logger.warning(f"⚠️  未知操作类型: {normalized_type}，保存原图")
             

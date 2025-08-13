@@ -504,6 +504,12 @@ class TaskManager:
             if action == 'show_intervention_dialog':
                 # 在主线程中显示人工接管对话框
                 self.gui_app.root.after(0, lambda: self._show_intervention_dialog(data))
+            elif action == 'show_request_dialog':
+                # 在主线程弹出 Request 对话框
+                self.gui_app.root.after(0, lambda: self._show_request_dialog(data))
+            elif action == 'show_exception_dialog':
+                # 在主线程弹出异常提示对话框
+                self.gui_app.root.after(0, lambda: self._show_exception_dialog(data))
             else:
                 self.logger.warning(f"⚠️ 未知的GUI回调动作: {action}")
         except Exception as e:
@@ -528,3 +534,70 @@ class TaskManager:
             self.logger.error(f"❌ 显示人工接管对话框失败: {e}")
             # 出错时自动通过
             data['callback'](True)
+
+    def _show_request_dialog(self, data):
+        """显示模型 Request 的输入/选择对话框"""
+        try:
+            from ..dialogs.request_dialog import show_request_dialog as _show
+            text = (data.get('text') if isinstance(data, dict) else None) or "请选择"
+            raw_options = (data.get('options') if isinstance(data, dict) else None) or []
+            callback = data.get('callback') if isinstance(data, dict) else None
+
+            # 兼容多种 options 结构：list 或 dict
+            options = []
+            try:
+                if isinstance(raw_options, list):
+                    options = raw_options
+                elif isinstance(raw_options, dict):
+                    # 常见形态：{"options": [...]} / {"list": [...]} / 多分组 {"饮料": [...], "配餐": [...]}
+                    candidate_keys = ['options', 'list', 'items', 'values']
+                    picked = None
+                    for k in candidate_keys:
+                        if k in raw_options and isinstance(raw_options[k], list):
+                            picked = raw_options[k]
+                            break
+                    if picked is None:
+                        # 扁平化所有 value 中的列表或标量
+                        flat = []
+                        for v in raw_options.values():
+                            if isinstance(v, list):
+                                flat.extend(v)
+                            elif v is not None:
+                                flat.append(v)
+                        options = flat
+                    else:
+                        options = picked
+            except Exception:
+                options = []
+
+            resp = _show(self.gui_app.root, text, options)
+            if resp and isinstance(resp, dict) and 'answer' in resp and resp['answer']:
+                if callback:
+                    callback(True, resp['answer'])
+            else:
+                if callback:
+                    callback(False)
+        except Exception as e:
+            self.logger.error(f"❌ 显示Request对话框失败: {e}")
+            if isinstance(data, dict) and data.get('callback'):
+                try:
+                    data['callback'](False)
+                except Exception:
+                    pass
+
+    def _show_exception_dialog(self, data):
+        """显示异常提示对话框，并在用户确认后回调继续。"""
+        try:
+            from tkinter import messagebox
+            message = (data.get('message') if isinstance(data, dict) else None) or "检测到异常，请在手机完成相关步骤后继续。"
+            callback = data.get('callback') if isinstance(data, dict) else None
+            messagebox.showwarning("需要操作", message, parent=self.gui_app.root)
+            if callback:
+                callback(True)
+        except Exception as e:
+            self.logger.error(f"❌ 显示异常对话框失败: {e}")
+            if isinstance(data, dict) and data.get('callback'):
+                try:
+                    data['callback'](True)
+                except Exception:
+                    pass

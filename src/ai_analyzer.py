@@ -13,11 +13,11 @@ from dashscope import Generation
 from dashscope import MultiModalConversation
 from .config import config
 from .logger_config import get_logger
-from .prompt import MOBILE_USE_DOUBAO
 import base64
 # from volcenginesdkarkruntime import Ark
 import math
 from openai import OpenAI
+from .knowledge_base import get_domain_rules_by_intent
 
 logger = get_logger(__name__)
 
@@ -47,7 +47,7 @@ class AIAnalyzer:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8'), image_format
     
-    def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> dict:
+    def analyze_screen(self, xml_path: str, query: str, current_step: int = 1, screenshot_path: str = None, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None, clarifications: list = None) -> dict:
         """分析当前屏幕状态并提供操作建议
         
         Args:
@@ -63,8 +63,11 @@ class AIAnalyzer:
         # 构建提示词
         
         # system_prompt = MOBILE_USE_DOUBAO.format(language="Chinese", instruction=config.get_ai_system_prompt())
-        system_prompt = config.get_ai_system_prompt()
-        user_prompt = self._build_prompt(query,xml_path, current_step, history_steps, intervention_prompt, restart_from_step)
+        base_system_prompt = config.get_ai_system_prompt()
+        # 动态注入领域规则基于查询和澄清信息
+        domain_rules = get_domain_rules_by_intent(query, None, history_steps, step=current_step)
+        system_prompt = base_system_prompt + ("\n\n" + domain_rules if domain_rules else "")
+        user_prompt = self._build_prompt(query,xml_path, current_step, history_steps, intervention_prompt, restart_from_step, clarifications)
         
         base64_image, image_format = self.encode_image(screenshot_path)
         # 调用AI模型，添加稳定输出参数
@@ -76,7 +79,20 @@ class AIAnalyzer:
             }
         ]
         
+        # 如果有历史步骤，添加到消息列表中
+        for s in history_steps[-5:]:
+            messages.append({
+                "role": "assistant",
+                "content": f"步骤{s.get('step')}: 观察={s.get('observation','')}; 执行={s.get('description','')}; 类型={s.get('type','')}"
+            })
         
+        # 添加用户选择（用户补充原文）
+        if clarifications:
+            messages.append({
+                "role": "user",
+                "content": "=== 用户上一步选择 ===\n" + "\n".join(map(str, clarifications[-1:]))
+            })
+
         # 添加当前图片消息
         messages.append({
             "role": "user",
@@ -107,7 +123,11 @@ class AIAnalyzer:
                 elif config.model_name in ['doubao-1-5-thinking-vision-pro-250428', 'doubao-1-5-ui-tars-250428']:
                     result = response.choices[0].message.content
                 else:
-                    result = response.output.choices[0].message.content
+                    # 兼容不同SDK返回结构
+                    try:
+                        result = response.choices[0].message.content
+                    except Exception:
+                        result = response.output.choices[0].message.content
                 # result = response.output.choices[0].message.content
                 logger.debug(f"🤖 AI原始响应: {result} ")
                 logger.debug(f"🤖 AI原始响应: {response.choices[0].message.reasoning_content}")
@@ -122,7 +142,7 @@ class AIAnalyzer:
         # 解析AI响应（如果失败会直接抛出异常）
         return self._parse_response(result)
     
-    def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> str:
+    def _build_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None, clarifications: list = None) -> str:
         """构建 AI提示词
         
         Args:
@@ -133,7 +153,7 @@ class AIAnalyzer:
             intervention_prompt: 人工介入的补充说明
             restart_from_step: 从哪一步重新开始（用于插入人工介入）
         """
-        return config.get_analysis_prompt(query, xml_content, current_step, history_steps, intervention_prompt, restart_from_step)
+        return config.get_analysis_prompt(query, xml_content, current_step, history_steps, intervention_prompt, restart_from_step, clarifications)
         # return config.get_ai_system_prompt()
 
     def _parse_response(self, response: str) -> dict:

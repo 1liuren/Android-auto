@@ -9,6 +9,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import json
+import os
 from ..utils.ui_helpers import create_custom_button, MODERN_COLORS
 from src.logger_config import get_logger
 
@@ -279,7 +280,7 @@ class InterventionDialog:
         type_combo = ttk.Combobox(
             plan_frame,
             textvariable=self.type_var,
-            values=['Open', 'touch', 'long_touch', 'input', 'scroll', 'drag', 'wait', 'End'],
+            values=['Open', 'touch', 'long_touch', 'input', 'scroll', 'drag', 'wait', 'request', 'End'],
             state="readonly",
             font=("Arial", 10)
         )
@@ -516,6 +517,73 @@ class InterventionDialog:
         )
         self.duration_entry.grid(row=0, column=1, sticky="w", padx=(5, 0))
         self.duration_entry.insert(0, str(plan.get('duration', 1.0)))
+        
+        # Request操作相关参数（仅在request类型时显示）
+        self.request_frame = tk.Frame(plan_frame, bg=MODERN_COLORS['bg_primary'])
+        self.request_frame.grid(row=8, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.request_frame.columnconfigure(1, weight=1)
+        
+        # Request文本
+        tk.Label(
+            self.request_frame,
+            text="提问文本:",
+            font=("Arial", 10, "bold"),
+            bg=MODERN_COLORS['bg_primary']
+        ).grid(row=0, column=0, sticky="nw", pady=(2, 0))
+        
+        self.request_text_entry = tk.Text(
+            self.request_frame,
+            font=("Arial", 10),
+            bg=MODERN_COLORS['white'],
+            relief="solid",
+            bd=1,
+            height=3,
+            wrap=tk.WORD
+        )
+        self.request_text_entry.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+        self.request_text_entry.insert(tk.END, plan.get('text', ''))
+        
+        # Request选项
+        tk.Label(
+            self.request_frame,
+            text="可选项:",
+            font=("Arial", 10, "bold"),
+            bg=MODERN_COLORS['bg_primary']
+        ).grid(row=1, column=0, sticky="nw", pady=(5, 0))
+        
+        self.request_options_entry = tk.Text(
+            self.request_frame,
+            font=("Arial", 10),
+            bg=MODERN_COLORS['white'],
+            relief="solid",
+            bd=1,
+            height=2,
+            wrap=tk.WORD
+        )
+        self.request_options_entry.grid(row=1, column=1, sticky="ew", padx=(5, 0), pady=(5, 0))
+        # 将options列表转换为每行一个选项的文本格式
+        options = plan.get('options', [])
+        if options:
+            options_text = '\n'.join(str(opt) for opt in options)
+            self.request_options_entry.insert(tk.END, options_text)
+        
+        # Request响应输入
+        tk.Label(
+            self.request_frame,
+            text="用户响应:",
+            font=("Arial", 10, "bold"),
+            bg=MODERN_COLORS['bg_primary'],
+            fg='red'  # 高亮显示这是需要用户输入的部分
+        ).grid(row=2, column=0, sticky="nw", pady=(5, 0))
+        
+        self.request_response_entry = tk.Entry(
+            self.request_frame,
+            font=("Arial", 10),
+            bg='#fff8dc',  # 淡黄色背景突出显示
+            relief="solid",
+            bd=2
+        )
+        self.request_response_entry.grid(row=2, column=1, sticky="ew", padx=(5, 0), pady=(5, 0))
         
         # 绑定类型变化事件
         type_combo.bind('<<ComboboxSelected>>', self._on_type_changed_with_visual)
@@ -947,6 +1015,17 @@ class InterventionDialog:
         else:
             self.duration_frame.grid_remove()
             
+        # 显示/隐藏Request相关控件
+        if operation_type == 'request':
+            self.request_frame.grid()
+            # Request操作不需要坐标，设置为0
+            if not self.x_entry.get():
+                self.x_entry.insert(0, "0")
+            if not self.y_entry.get():
+                self.y_entry.insert(0, "0")
+        else:
+            self.request_frame.grid_remove()
+            
         # touch操作不设置默认坐标，保持原有值或0
             
         # 显示/隐藏任务完成状态区域（只在End操作时显示）
@@ -1223,6 +1302,31 @@ class InterventionDialog:
                     plan['app'] = app_val
                 if package_val:
                     plan['package'] = package_val
+            
+            # 更新Request操作相关参数（如果用户输入了内容）
+            if self.type_var.get() == 'request':
+                # 更新提问文本
+                request_text = self.request_text_entry.get(1.0, tk.END).strip()
+                if request_text:
+                    plan['text'] = request_text
+                
+                # 更新选项列表
+                options_text = self.request_options_entry.get(1.0, tk.END).strip()
+                if options_text:
+                    # 将文本按行分割为选项列表
+                    options = [opt.strip() for opt in options_text.split('\n') if opt.strip()]
+                    plan['options'] = options
+                else:
+                    # 如果选项为空，移除options字段
+                    if 'options' in plan:
+                        del plan['options']
+                
+                # 获取用户响应（这是关键部分）
+                user_response = self.request_response_entry.get().strip()
+                if user_response:
+                    # 将用户响应添加到结果中，用于传递给后续模型
+                    plan['user_response'] = user_response
+                    logger.info(f"📝 用户Request响应: {user_response}")
             
             result['plan'] = plan
             logger.debug(f"📋 计划信息更新完成: {plan}")

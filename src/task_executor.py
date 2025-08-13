@@ -44,6 +44,7 @@ class TaskExecutor:
         self.restart_from_step = 0  # 从哪一步重新开始执行
         self.intervention_event = None  # 用于线程同步的事件
         self.intervention_logged = False  # 人工介入日志记录标记
+        # 不再维护槽位状态
     
     def interrupt_task(self):
         """中断当前任务"""
@@ -315,8 +316,16 @@ class TaskExecutor:
                     screenshot_path=screenshot_path,
                     history_steps=self.history_steps,
                     intervention_prompt=intervention_prompt,
-                    restart_from_step=getattr(self, 'restart_from_step', None)
+                    restart_from_step=getattr(self, 'restart_from_step', None),
+                    clarifications=self._get_last_user_choice()
                 )
+                # # 根据当前槽位与观察文本，必要时强制触发 Request 或 End
+                # ai_result = self._enforce_required_requests(ai_result)
+                # 检测异常码并阻塞等待人工“继续”
+                if isinstance(ai_result.get("plan"), dict) and ai_result["plan"].get("error_code"):
+                    if self._handle_exception_and_block(ai_result["plan"], step, screenshot_path, xml_path):
+                        logger.info("⏸️ 异常已处理，重新获取页面状态并继续")
+                        continue
             except Exception as e:
                 logger.error(f"❌ AI分析失败: {str(e)}")
                 return False
@@ -345,12 +354,25 @@ class TaskExecutor:
                     logger.warning(f"⚠️ 人工审核被取消或超时，停止执行")
                     return False
             
-            # 5. 检查任务是否完成
+            # 5. 当AI要求澄清（type=request）时，仅记录并等待外部对接层处理（GUI/对话）
+            if self._handle_request_plan(ai_result):
+                # 保存当前请求步骤（包含问题与可选项），但不执行物理操作
+                try:
+                    self._save_step_data(ai_result, step, final_screenshot_path, xml_path, label_path=None)
+                except Exception:
+                    pass
+                # 进入下一步前记录历史
+                observation = ai_result.get("observation", "")
+                self._record_history_step(ai_result.get("plan", {}), observation, step)
+                step += 1
+                continue
+
+            # 6. 检查任务是否完成
             if self._is_task_completed(ai_result):
                 self._handle_task_completion(ai_result, step, final_screenshot_path, xml_path)
                 return True
             
-            # 6. 生成标记图片（某些操作不需要标记）
+            # 7. 生成标记图片（某些操作不需要标记）
             label_path = None
             plan = ai_result.get("plan", {})
             action_type = plan.get("type", "").lower()
@@ -367,10 +389,10 @@ class TaskExecutor:
             if action_type not in ["open", "wait", "end"]:
                 label_path = self._generate_labeled_image(ai_result, step, final_screenshot_path)
             
-            # 7. 保存步骤数据
+            # 8. 保存步骤数据
             self._save_step_data(ai_result, step, final_screenshot_path, xml_path, label_path)
             
-            # 8. 执行操作
+            # 9. 执行操作
             if not self._execute_action(ai_result.get("plan", {})):
                 logger.warning(f"⚠️  步骤 {step} 操作执行失败，但继续下一步...")
             
@@ -379,7 +401,7 @@ class TaskExecutor:
                 logger.info(f"🛑 步骤 {step} 操作执行后检测到中断请求，停止执行")
                 return False
             
-            # 9. 记录历史步骤（在执行操作后）
+            # 10. 记录历史步骤（在执行操作后）
             observation = ai_result.get("observation", "")
             self._record_history_step(plan, observation, step)
             
@@ -554,6 +576,11 @@ class TaskExecutor:
         if label_path:
             step_data["label"] = os.path.basename(label_path)
         
+        # 如果ai_result中有user_opt字段，添加到步骤数据中
+        if "user_opt" in ai_result and ai_result["user_opt"] and cleaned_plan["type"] == "request":
+            step_data["user_opt"] = ai_result["user_opt"]
+            logger.info(f"📝 步骤 {step} 已保存用户选择: {ai_result['user_opt']}")
+        
         self.task_data["data"].append(step_data)
     
     def _clean_plan_data(self, plan: dict) -> dict:
@@ -637,7 +664,117 @@ class TaskExecutor:
             # End操作只需要description和type
             pass
         
+        # 异常码透传保存，便于后续回溯
+        if "error_code" in plan and plan["error_code"]:
+            cleaned_plan["error_code"] = plan["error_code"]
+
         return cleaned_plan
+
+    def _handle_exception_and_block(self, plan: dict, step: int, screenshot_path: str, xml_path: str) -> bool:
+        """处理AI返回的异常码：保存异常样本并阻塞，直到用户点击继续。
+        返回True表示已阻塞等待并应重新开始当前step。
+        """
+        try:
+            error_code = plan.get("error_code", "").strip()
+            if not error_code:
+                return False
+            # 异常类型映射
+            code_to_cn = {
+                "PERMISSION_REQUEST": "权限申请",
+                "LOGIN_REQUIRED": "登录要求",
+                "MANUAL_VERIFICATION_REQUIRED": "需要人工验证",
+            }
+            error_cn = code_to_cn.get(error_code, error_code)
+
+            # 准备异常采集目录与去重注册表
+            base_dir = os.path.join(self.output_base_dir, "exceptions")
+            os.makedirs(base_dir, exist_ok=True)
+            registry_path = os.path.join(base_dir, "registry.json")
+            try:
+                with open(registry_path, "r", encoding="utf-8") as rf:
+                    registry = json.load(rf)
+            except Exception:
+                registry = {}
+
+            device_key = self.task_data.get("phone", "Unknown Device")
+            brand = "未知品牌"
+            registry_key = f"{device_key}__{brand}__{error_code}"
+
+            # 仅首个样本落盘
+            if registry_key not in registry:
+                # 目录名：小程序名-异常类型-具体任务
+                def _safe_name(s: str) -> str:
+                    return re.sub(r"[^\u4e00-\u9fa5\w\-]+", "_", s)[:50]
+
+                task_name = _safe_name(self.task_data.get("query", "任务"))
+                folder_name = f"{brand}-{error_cn}-{task_name}"
+                target_dir = os.path.join(base_dir, folder_name)
+                os.makedirs(target_dir, exist_ok=True)
+
+                # 复制截图与XML
+                try:
+                    import shutil
+                    if os.path.exists(screenshot_path):
+                        shutil.copy(screenshot_path, os.path.join(target_dir, os.path.basename(screenshot_path)))
+                    if os.path.exists(xml_path):
+                        shutil.copy(xml_path, os.path.join(target_dir, os.path.basename(xml_path)))
+                except Exception as e:
+                    logger.warning(f"⚠️ 异常样本复制失败: {e}")
+
+                # 保存info.json
+                info = {
+                    "brand": brand,
+                    "device": device_key,
+                    "error_code": error_code,
+                    "error_cn": error_cn,
+                    "step": step,
+                    "observation": self.task_data.get("data", [])[-1]["observation"] if self.task_data.get("data") else "",
+                    "timestamp": datetime.now().isoformat()
+                }
+                try:
+                    with open(os.path.join(target_dir, "info.json"), "w", encoding="utf-8") as wf:
+                        json.dump(info, wf, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    logger.warning(f"⚠️ 异常信息保存失败: {e}")
+
+                registry[registry_key] = True
+                try:
+                    with open(registry_path, "w", encoding="utf-8") as wf:
+                        json.dump(registry, wf, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    logger.warning(f"⚠️ 异常注册表保存失败: {e}")
+
+                logger.info(f"📂 已采集异常样本: {folder_name}")
+            else:
+                logger.info("ℹ️ 该设备的此类异常已采集过，跳过样本保存")
+
+            # 通过GUI挂起等待用户处理
+            message = f"检测到异常：{error_cn}。请在手机上完成相关操作后，点击【继续】。"
+            if hasattr(self, 'gui_callback') and self.gui_callback:
+                import threading
+                done_event = threading.Event()
+                result_holder = {"approved": False}
+
+                def _cb(approved):
+                    result_holder["approved"] = approved
+                    done_event.set()
+
+                self.gui_callback('show_exception_dialog', {
+                    'message': message,
+                    'callback': _cb
+                })
+
+                # 等待用户点击继续，最长5分钟
+                done_event.wait(timeout=300)
+            else:
+                # 无GUI时，降级为定时等待
+                logger.info("⏳ 无GUI回调，等待10秒后继续执行")
+                time.sleep(10)
+
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ 异常挂起流程失败: {e}")
+            return False
     
     def _execute_action(self, plan: dict) -> bool:
         """执行操作"""
@@ -660,6 +797,7 @@ class TaskExecutor:
                     return False
                 if times > 1 and i < times - 1:
                     time.sleep(0.5)  # 多次点击间隔
+            time.sleep(2)
             return True
             
         elif action_type == "long_touch" and "position" in plan:
@@ -753,8 +891,87 @@ class TaskExecutor:
             logger.info(f"⚠️  {action_type} 操作，跳过自动执行")
             return True
         
+        elif action_type == "request":
+            # 只生成澄清问题，不执行设备操作
+            q = plan.get("question") or plan.get("description", "请补充必要信息")
+            required_slots = plan.get("required_slots", [])
+            options = plan.get("options", {})
+            logger.info(f"❓ 需要用户澄清: {q}")
+            if required_slots:
+                logger.info(f"   待补齐槽位: {required_slots}")
+            if options:
+                logger.info(f"   可选项: {json.dumps(options, ensure_ascii=False)}")
+            # 将待澄清信息挂到任务数据，供GUI/对话层取用
+            self._attach_pending_query(q, required_slots, options)
+            return True
+        
         logger.error(f"❌ 未知操作类型: {action_type}")
         return False
+
+    # =====================
+    # 用户澄清处理辅助
+    # =====================
+    def _handle_request_plan(self, ai_result: dict) -> bool:
+        """检测并处理 type=Request 的计划。返回 True 表示本步只提问不执行设备操作。"""
+        try:
+            plan = ai_result.get("plan", {})
+            ptype = plan.get("type", "").lower()
+            if ptype != "request":
+                return False
+            
+            # 检查是否有来自人工干预的用户响应
+            user_response = plan.get("user_response")
+            if user_response:
+                # 如果已经有人工提供的响应，直接记录到ai_result中，不再弹出自动询问窗口
+                user_answer = str(user_response).strip()
+                ai_result["user_opt"] = user_answer
+                logger.info(f"📝 人工干预Request响应已记录: {user_answer}")
+                return True
+            
+            # 获取问题文本用于日志记录
+            text = plan.get("text") or plan.get("description") or "请进行选择或确认"
+
+            # 若设置了GUI回调，直接弹出请求对话框并同步等待回答
+            if hasattr(self, 'gui_callback') and self.gui_callback:
+                import threading
+                answer_holder = {"approved": False, "answer": None}
+                done_event = threading.Event()
+
+                def on_answer(approved, answer=None):
+                    answer_holder["approved"] = approved
+                    answer_holder["answer"] = answer
+                    done_event.set()
+
+                # 触发GUI层对话框
+                self.gui_callback('show_request_dialog', {
+                    'text': text,
+                    'options': plan.get('options') or [],
+                    'callback': on_answer
+                })
+
+                # 阻塞等待（设置超时，避免死等）
+                done_event.wait(timeout=300)
+
+                # 把用户回答直接添加到ai_result中，这样会自然保存在步骤数据中
+                if answer_holder["approved"] and answer_holder["answer"]:
+                    user_answer = str(answer_holder["answer"]).strip()
+                    ai_result["user_opt"] = user_answer
+            
+            return True
+        except Exception:
+            return False
+
+    def _get_last_user_choice(self) -> list:
+        """从步骤数据中获取最后一次用户选择"""
+        try:
+            # 从后往前查找最后一个包含user_opt的Request步骤
+            for step_data in reversed(self.task_data.get("data", [])):
+                if "user_opt" in step_data and step_data["user_opt"]:
+                    return [step_data["user_opt"]]
+            return []
+        except Exception:
+            return []
+
     
     def _save_task_result(self):
         """保存任务结果"""

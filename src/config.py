@@ -25,7 +25,11 @@ class Config:
         # 模型参数配置
         self.model_params = {
             "temperature": 0.0,
-            "stream": False
+            "stream": False,
+            # 限制输出长度，尽量减少token
+            "max_tokens": 300,
+            # 强制JSON对象输出（兼容新式OpenAI/Ark接口）
+            "response_format": {"type": "json_object"}
             # "top_p": 0.9,
             # "top_k": 10,
             # "enable_thinking": False
@@ -52,7 +56,8 @@ class Config:
             "懂车帝": "com.ss.android.auto",
             "滴滴出行": "com.sdu.didi.psnger",
             "携程": "ctrip.android.view",
-            "抖音": "com.ss.android.ugc.aweme"
+            "抖音": "com.ss.android.ugc.aweme",
+            "支付宝": "com.eg.android.AlipayGphone"
         }
         
         #最大执行次数
@@ -130,11 +135,11 @@ class Config:
      * 输入操作："输入用户名"、"输入搜索内容"
      * 等待操作："等待广告结束"、"等待页面加载"
      * 其他操作：简洁明了的中文描述
-   - type: 操作类型（Open/touch/long_touch/input/scroll/drag/wait/End等）
+   - type: 操作类型（open/touch/long_touch/input/scroll/drag/wait/request/end等，建议小写）
    - position: 点击位置坐标（仅在touch/long_touch/input操作时需要）
    - box: 元素边界框（touch/long_touch/input/scroll/drag操作时需要，Open和wait操作不需要）
    - times: 点击次数（默认为1，仅在touch操作时需要）
-   - text: 输入文本（仅在input操作时需要）
+   - text: 输入文本（当在input操作时需要搜索目标文本/当type为request时，向用户发起选择/确认的提问文本（中文，简洁明确））
    - app: 应用名称（仅在Open操作时需要）
    - package: 应用包名（仅在Open操作时需要，用于直接启动应用）
    - start_position: 滑动/拖动起始位置坐标（仅在scroll/drag操作时需要）
@@ -142,6 +147,7 @@ class Config:
    - duration: 长按持续时间，单位秒（仅在long_touch操作时需要，默认0.5）
    - wait_time: 等待时长，单位秒（仅在wait操作时需要）
    - wait_reason: 等待原因（仅在wait操作时需要，如"广告播放"、"页面加载"等）
+   - options: 可选项数组（仅在request操作时需要）
 
 **应用包名列表：**
 {app_packages_text}
@@ -152,6 +158,23 @@ class Config:
 - 如果任务已完成，将type设置为"End"，description设置为"任务已完成"
 - 滑动和拖动操作注意bbox，起始点和结束点需要再bbox范围内，不要超出bbox范围
 - 滑动的拖动操作前并不需要激活点击操作，直接滑动即可
+
+【Request操作规范（通用）】
+- 触发条件：当关键信息缺失、存在歧义，或页面存在多项候选需用户选择时，输出 type="request"，仅包含必要字段。
+- 字段要求：
+  · type: "request"（小写）
+  · text: 面向用户的简短中文问题（一次只询问一个信息点）
+- 询问优先级（点餐场景）：
+  1) 取餐方式最优先：缺少时立即询问"请问你要外卖还是到店呢？"
+  2) 商品名次优先：有取餐方式但缺商品名时询问"请问你要购买什么商品呢？"
+  3) 规格最后：仅在商品详情页且页面显示必选规格时询问
+- 原则：
+  · 单信息原则：一次只询问一个缺失信息点
+  · 去重：已确认过的信息不再重复询问
+  · 历史一致性：避免连续两次询问同一问题
+  · 进入商品详情页前不询问规格，只在详情页根据实际必选项询问
+  · 如果页面存在多个候选，请输出options字段，并结合当前页面实际元素给出可选项数组（如["外卖","堂食"]、地址候选、商品候选、规格候选等；若无法解析则可为空）
+  · **重要**：收到用户上一步选择后，必须先执行对应的界面操作（如点击按钮），不要跳过界面操作直接提问下一个问题
 
 **隐私保护检测：**
 在分析界面时，请同时检测是否存在需要隐私保护的敏感信息：
@@ -201,7 +224,7 @@ class Config:
     }},
     "plan": {{
         "description": "操作描述",
-        "type": "操作类型(Open/touch/long_touch/input/scroll/drag/wait/End)",
+        "type": "操作类型(open/touch/long_touch/input/scroll/drag/wait/request/end)",
         "position": "<point>x y</point>",
         "box": "<bbox>x1 y1 x2 y2</bbox>",
         "times": 1,
@@ -212,11 +235,13 @@ class Config:
         "stop_position": "<point>x y</point>",
         "duration": 在scroll/drag操作时需要,
         "wait_time": 在wait操作时需要,
-        "wait_reason": "等待原因（wait操作时需要）"
+        "wait_reason": "等待原因（wait操作时需要）",
+        "error_code": "异常返回码（PERMISSION_REQUEST/LOGIN_REQUIRED/MANUAL_VERIFICATION_REQUIRED）",
+        "options": "可选项数组（request操作时需要）",
     }}
 }}"""
     
-    def get_analysis_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None) -> str:
+    def get_analysis_prompt(self, query: str, xml_content: str, current_step: int, history_steps: list = None, intervention_prompt: str = None, restart_from_step: int = None, clarifications: list = None) -> str:
         """获取分析用的用户提示词
         
         Args:
@@ -254,11 +279,16 @@ class Config:
             (not history_steps or restart_from_step is None)):
             intervention_text = f"\n=== 人工介入指导 ===\n重要提示：{intervention_prompt.strip()}\n请特别注意上述人工指导，并根据指导内容调整后续操作策略。\n"
         
+        clar_text = ""
+        if clarifications and isinstance(clarifications, list) and len(clarifications) > 0:
+            clar_text = "\n=== 用户上一步选择 ===\n" + "\n".join(map(str, clarifications[-1:]))
+
         return f"""
 当前任务: {query}
 当前步骤: {current_step}
 {history_text}
 {intervention_text}
+{clar_text}
 
 请以上信息并告诉我下一步应该如何操作。请只返回一个JSON格式的响应，不要包含其他文本。"""
 
