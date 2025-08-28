@@ -168,7 +168,14 @@ class AIAnalyzer:
         if json_obj and "plan" in json_obj:
             plan = json_obj["plan"]
             if "start_position" in plan and "stop_position" in plan:
-                plan["start_position"], plan["stop_position"] = plan["stop_position"], plan["start_position"]
+                # 获取起始和结束坐标
+                start_pos = plan["start_position"]
+                stop_pos = plan["stop_position"]
+                
+                # 判断是否为上下滑动
+                if abs(start_pos[1] - stop_pos[1]) > abs(start_pos[0] - stop_pos[0]):
+                    # 垂直滑动时交换起始和结束位置
+                    plan["start_position"], plan["stop_position"] = stop_pos, start_pos
 
         if json_obj:
             # 验证和修复必要字段
