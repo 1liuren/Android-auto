@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import json
 import os
+import re
 from ..utils.ui_helpers import create_custom_button, MODERN_COLORS
 from src.logger_config import get_logger
 
@@ -23,6 +24,10 @@ class InterventionDialog:
     def __init__(self, parent, ai_result, screenshot_path=None, main_app=None):
         self.parent = parent
         self.ai_result = ai_result.copy()  # 复制AI结果
+        
+        # 预处理AI结果中的坐标，将占位符替换为默认值
+        self._preprocess_plan_coordinates()
+        
         self.screenshot_path = screenshot_path
         self.main_app = main_app  # 主应用对象，包含device_manager等
         self.result = None  # 用户修改后的结果
@@ -33,6 +38,28 @@ class InterventionDialog:
         
         # 创建对话框
         self._create_dialog()
+        
+    def _preprocess_plan_coordinates(self):
+        """预处理plan中的坐标，将占位符文本替换为默认值"""
+        if 'plan' not in self.ai_result or not isinstance(self.ai_result['plan'], dict):
+            return
+            
+        plan = self.ai_result['plan']
+        
+        # 处理position字段
+        if "position" in plan and isinstance(plan["position"], str):
+            if "<point>" in plan["position"]:
+                plan["position"] = [0, 0]  # 默认值
+                
+        # 处理box字段
+        if "box" in plan and isinstance(plan["box"], str):
+            if "<bbox>" in plan["box"]:
+                plan["box"] = [[0, 0], [0, 0]]  # 默认值
+                
+        # 处理其他可能的坐标字段
+        for key in ["start_position", "stop_position", "swipe_start", "swipe_end"]:
+            if key in plan and isinstance(plan[key], str) and "<point>" in plan[key]:
+                plan[key] = [0, 0]  # 默认值
         
     def _create_dialog(self):
         """创建对话框界面"""
@@ -493,7 +520,7 @@ class InterventionDialog:
             bd=1
         )
         self.input_text_entry.grid(row=0, column=1, sticky="ew", padx=(5, 0))
-        self.input_text_entry.insert(0, plan.get('input_text', ''))
+        self.input_text_entry.insert(0, plan.get('text', ''))
         
         # 时长参数（仅在long_touch和wait类型时显示）
         self.duration_frame = tk.Frame(plan_frame, bg=MODERN_COLORS['bg_primary'])
@@ -516,7 +543,15 @@ class InterventionDialog:
             width=10
         )
         self.duration_entry.grid(row=0, column=1, sticky="w", padx=(5, 0))
-        self.duration_entry.insert(0, str(plan.get('duration', 1.0)))
+        
+        # 根据操作类型获取默认时长值
+        default_duration = 1.0
+        if plan.get('type') == 'wait' and 'wait_time' in plan:
+            default_duration = plan.get('wait_time')
+        elif 'duration' in plan:
+            default_duration = plan.get('duration')
+            
+        self.duration_entry.insert(0, str(default_duration))
         
         # Request操作相关参数（仅在request类型时显示）
         self.request_frame = tk.Frame(plan_frame, bg=MODERN_COLORS['bg_primary'])
@@ -1290,7 +1325,11 @@ class InterventionDialog:
                 duration_val = self.duration_entry.get().strip()
                 if duration_val:
                     try:
-                        plan['duration'] = float(duration_val)
+                        # 根据操作类型设置不同的时长参数字段
+                        if self.type_var.get() == 'wait':
+                            plan['wait_time'] = float(duration_val)
+                        else:  # long_touch
+                            plan['duration'] = float(duration_val)
                     except ValueError:
                         pass  # 保持原始值
             

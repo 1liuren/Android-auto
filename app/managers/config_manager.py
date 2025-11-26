@@ -92,6 +92,7 @@ class ConfigManager:
             
             # 同时更新系统config对象
             config.dashscope_api_key = self.gui_app.api_key_var.get()
+            config.ark_api_key = self.gui_app.api_key_var.get()
             config.model_name = self.gui_app.model_name_var.get()
             config.max_execution_times = int(self.gui_app.max_steps_var.get() or 50)
             config.device_id = self.gui_app.device_id_var.get()

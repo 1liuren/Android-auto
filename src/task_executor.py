@@ -564,10 +564,13 @@ class TaskExecutor:
         # 清理plan中的空字段
         cleaned_plan = self._clean_plan_data(plan)
         
+        activity = self.device.get_current_app().get("activity", "")
+        
         step_data = {
             "step": step,
             "screenshot": os.path.basename(screenshot_path),
             "xml": os.path.basename(xml_path),
+            "activity": activity,
             "observation": ai_result.get("observation", ""),
             "plan": [cleaned_plan]
         }

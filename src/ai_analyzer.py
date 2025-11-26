@@ -18,6 +18,7 @@ import base64
 import math
 from openai import OpenAI
 from .knowledge_base import get_domain_rules_by_intent
+from time import time
 
 logger = get_logger(__name__)
 
@@ -65,7 +66,8 @@ class AIAnalyzer:
         # system_prompt = MOBILE_USE_DOUBAO.format(language="Chinese", instruction=config.get_ai_system_prompt())
         base_system_prompt = config.get_ai_system_prompt()
         # 动态注入领域规则基于查询和澄清信息
-        domain_rules = get_domain_rules_by_intent(query, None, history_steps, step=current_step)
+        # domain_rules = get_domain_rules_by_intent(query, None, history_steps, step=current_step)
+        domain_rules = ""
         system_prompt = base_system_prompt + ("\n\n" + domain_rules if domain_rules else "")
         user_prompt = self._build_prompt(query,xml_path, current_step, history_steps, intervention_prompt, restart_from_step, clarifications)
         
@@ -111,6 +113,7 @@ class AIAnalyzer:
         while retry_count < max_retries:
             try:
                 # logger.info(f"模型输入: {user_prompt}")
+                start_time = time()  # 记录开始时间
                 response = self.client.chat.completions.create(
                     model=config.model_name,
                     messages=messages,
@@ -131,6 +134,8 @@ class AIAnalyzer:
                 # result = response.output.choices[0].message.content
                 logger.debug(f"🤖 AI原始响应: {result} ")
                 logger.debug(f"🤖 AI原始响应: {response.choices[0].message.reasoning_content}")
+                end_time = time()  # 记录结束时间
+                logger.info(f"🤖 AI响应时间: {(end_time - start_time):.2f}秒")
                 break
             except Exception as e:
                 retry_count += 1
@@ -167,8 +172,18 @@ class AIAnalyzer:
         # 如果存在plan字段且包含start_position和stop_position,则交换它们
         if json_obj and "plan" in json_obj:
             plan = json_obj["plan"]
-            if "start_position" in plan and "stop_position" in plan:
-                plan["start_position"], plan["stop_position"] = plan["stop_position"], plan["start_position"]
+            start_pos = plan.get("start_position")
+            stop_pos = plan.get("stop_position")
+            
+            # 确保 start_pos 和 stop_pos 是有效的坐标列表
+            if isinstance(start_pos, list) and len(start_pos) == 2 and \
+               isinstance(stop_pos, list) and len(stop_pos) == 2:
+                
+                # 判断是否为上下滑动
+                if abs(start_pos[1] - stop_pos[1]) > abs(start_pos[0] - stop_pos[0]):
+                    # 垂直滑动时交换起始和结束位置
+                    plan["start_position"], plan["stop_position"] = stop_pos, start_pos
+
 
         if json_obj:
             # 验证和修复必要字段
