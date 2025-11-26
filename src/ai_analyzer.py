@@ -184,7 +184,6 @@ class AIAnalyzer:
                     # 垂直滑动时交换起始和结束位置
                     plan["start_position"], plan["stop_position"] = stop_pos, start_pos
 
-
         if json_obj:
             # 验证和修复必要字段
             return self._validate_and_fix_response(json_obj)
